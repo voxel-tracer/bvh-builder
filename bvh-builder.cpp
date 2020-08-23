@@ -458,7 +458,7 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
 void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
     std::fstream out(output, std::ios::out | std::ios::binary);
     const char* HEADER = "BVH_00.03";
-    out.write(HEADER, strlen(HEADER));
+    out.write(HEADER, strlen(HEADER) + 1);
     out.write((char*)&sc.numTris, sizeof(int));
     out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
     out.write((char*)&sc.bvh_size, sizeof(int));
