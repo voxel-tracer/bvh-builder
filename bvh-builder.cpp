@@ -1,9 +1,10 @@
 
 #include <iostream>
 #include <time.h>
+#include <string>
 
 #define TINYOBJLOADER_IMPLEMENTATION 
-#include <tiny_obj_loader.h>
+#include "tiny_obj_loader.h"
 
 // following are needed to properly compile vec3.h
 #define __host__
@@ -48,9 +49,14 @@ struct triangle {
         v[1] = v1;
         v[2] = v2;
         meshID = mID;
+        update();
 
         for (auto i = 0; i < 6; i++)
             texCoords[i] = tc[i];
+    }
+
+    void update() {
+        center = (v[0] + v[1] + v[2]) / 3;
     }
 
     vec3 bounds_min() {
@@ -58,6 +64,7 @@ struct triangle {
     }
 
     vec3 v[3];
+    vec3 center;
     float texCoords[6];
     unsigned char meshID;
 };
@@ -359,6 +366,7 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
                 vec3 v = sc.tris[t].v[i];
                 sc.tris[t].v[i] = (v - ctr) * scale / maxSize;
             }
+            sc.tris[t].update();
         }
 
         mn = minof(sc.tris, size);
@@ -372,9 +380,9 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
     sc.bMax = mx;
 
     // build bvh
-//    sc.bvh = build_bvh(sc.tris, size, numPrimitivesPerLeaf, sc.bvh_size);
+    sc.bvh = build_bvh(sc.tris, size, numPrimitivesPerLeaf, sc.bvh_size);
 
-    build_sah_bvh(sc.tris, size);
+    //build_sah_bvh(sc.tris, size);
 
     if (addMarker) {
         float tc[6];
@@ -447,11 +455,10 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
     return true;
 }
 
-// BVH_00.04: removed triangle.center
 void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
     std::fstream out(output, std::ios::out | std::ios::binary);
-    const char* HEADER = "BVH_00.04";
-    out.write(HEADER, sizeof(HEADER));
+    const char* HEADER = "BVH_00.03";
+    out.write(HEADER, strlen(HEADER));
     out.write((char*)&sc.numTris, sizeof(int));
     out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
     out.write((char*)&sc.bvh_size, sizeof(int));
@@ -468,29 +475,30 @@ int main() {
     int numPrimitivesPerLeaf = 5;
 
     //TODO include scale in the transformation mat, so we can scale models separately
-
+    std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
     std::vector<triangle> tris;
     bool success = true;
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Black.obj", yUp, tris, 0);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Brass.obj", yUp, tris, 1);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\BrushedAluminium.obj", yUp, tris, 2);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Candles.obj", yUp, tris, 3);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\ChairSeat.obj", yUp, tris, 4);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Glass.obj", yUp, tris, 5);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Gold.obj", yUp, tris, 6);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Lampshade.obj", yUp, tris, 7);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\MagnoliaPaint.obj", yUp, tris, 8);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Painting1.obj", yUp, tris, 9);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Painting2.obj", yUp, tris, 10);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Painting3.obj", yUp, tris, 11);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\StainlessSteel.obj", yUp, tris, 12);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\Wallpaper.obj", yUp, tris, 13);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WhitePaint.obj", yUp, tris, 14);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WhitePlastic.obj", yUp, tris, 15);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WoodChair.obj", yUp, tris, 16);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WoodFloor.obj", yUp, tris, 17);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WoodLamp.obj", yUp, tris, 18);
-    success = success && loadFromObj("D:\\vstudio\\glsl-pathtracer\\GLSL-PathTracer\\bin\\assets\\staircase\\WoodStairs.obj", yUp, tris, 19);
+
+    success = success && loadFromObj(basePath + "Black.obj", yUp, tris, 0);
+    success = success && loadFromObj(basePath + "Brass.obj", yUp, tris, 1);
+    success = success && loadFromObj(basePath + "BrushedAluminium.obj", yUp, tris, 2);
+    success = success && loadFromObj(basePath + "Candles.obj", yUp, tris, 3);
+    success = success && loadFromObj(basePath + "ChairSeat.obj", yUp, tris, 4);
+    success = success && loadFromObj(basePath + "Glass.obj", yUp, tris, 5);
+    success = success && loadFromObj(basePath + "Gold.obj", yUp, tris, 6);
+    success = success && loadFromObj(basePath + "Lampshade.obj", yUp, tris, 7);
+    success = success && loadFromObj(basePath + "MagnoliaPaint.obj", yUp, tris, 8);
+    success = success && loadFromObj(basePath + "Painting1.obj", yUp, tris, 9);
+    success = success && loadFromObj(basePath + "Painting2.obj", yUp, tris, 10);
+    success = success && loadFromObj(basePath + "Painting3.obj", yUp, tris, 11);
+    success = success && loadFromObj(basePath + "StainlessSteel.obj", yUp, tris, 12);
+    success = success && loadFromObj(basePath + "Wallpaper.obj", yUp, tris, 13);
+    success = success && loadFromObj(basePath + "WhitePaint.obj", yUp, tris, 14);
+    success = success && loadFromObj(basePath + "WhitePlastic.obj", yUp, tris, 15);
+    success = success && loadFromObj(basePath + "WoodChair.obj", yUp, tris, 16);
+    success = success && loadFromObj(basePath + "WoodFloor.obj", yUp, tris, 17);
+    success = success && loadFromObj(basePath + "WoodLamp.obj", yUp, tris, 18);
+    success = success && loadFromObj(basePath + "WoodStairs.obj", yUp, tris, 19);
     
     //success = success && loadFromObj("D:\\models\\obj\\cube\\cube.obj", yUp, tris, 0);
     if (!success) {
@@ -501,7 +509,7 @@ int main() {
     scene s = initScene(tris, numPrimitivesPerLeaf, scale, false); // passing scale=0 disables scaling the model
 
     //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
-    //save("D:\\models\\obj\\staircase.bvh", s, numPrimitivesPerLeaf);
+    save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s, numPrimitivesPerLeaf);
 
     delete[] s.tris;
 }

@@ -142,6 +142,7 @@
     <ClCompile Include="bvh-builder.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="tiny_obj_loader.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
