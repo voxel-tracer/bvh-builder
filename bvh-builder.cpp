@@ -10,6 +10,8 @@
 #define __host__
 #define __device__
 
+//#define SAH_BVH
+
 #include "vec3.h"
 
 struct mat3x3 {
@@ -83,6 +85,7 @@ struct bvh_node {
     vec3 max;
 };
 
+#ifdef SAH_BVH
 struct sah_aabb {
     vec3 bmin;
     vec3 bmax;
@@ -119,6 +122,7 @@ struct sah_bvh_node {
     sah_bvh_node(const sah_aabb& aabb, sah_bvh_node* left, sah_bvh_node* right) : min(aabb.bmin), max(aabb.bmax), start(0), length(0), left(left), right(right) {}
     sah_bvh_node(const sah_aabb& aabb, uint32_t start, uint32_t length) : min(aabb.bmin), max(aabb.bmax), start(start), length(length), left(NULL), right(NULL) {}
 };
+#endif
 
 struct scene {
     triangle* tris;
@@ -154,7 +158,7 @@ vec3 maxof(const triangle* l, int n) {
     return max;
 }
 
-int box_x_compare(const void* a, const void* b) {
+int bmin_x_compare(const void* a, const void* b) {
     float xa = ((triangle*)a)->bounds_min().x();
     float xb = ((triangle*)b)->bounds_min().x();
 
@@ -163,7 +167,16 @@ int box_x_compare(const void* a, const void* b) {
     return 0;
 }
 
-int box_y_compare(const void* a, const void* b) {
+int center_x_compare(const void* a, const void* b) {
+    float xa = ((triangle*)a)->center.x();
+    float xb = ((triangle*)b)->center.x();
+
+    if (xa < xb) return -1;
+    else if (xb < xa) return 1;
+    return 0;
+}
+
+int bmin_y_compare(const void* a, const void* b) {
     float ya = ((triangle*)a)->bounds_min().y();
     float yb = ((triangle*)b)->bounds_min().y();
 
@@ -172,9 +185,27 @@ int box_y_compare(const void* a, const void* b) {
     return 0;
 }
 
-int box_z_compare(const void* a, const void* b) {
+int center_y_compare(const void* a, const void* b) {
+    float ya = ((triangle*)a)->center.y();
+    float yb = ((triangle*)b)->center.y();
+
+    if (ya < yb) return -1;
+    else if (yb < ya) return 1;
+    return 0;
+}
+
+int bmin_z_compare(const void* a, const void* b) {
     float za = ((triangle*)a)->bounds_min().z();
     float zb = ((triangle*)b)->bounds_min().z();
+
+    if (za < zb) return -1;
+    else if (zb < za) return 1;
+    return 0;
+}
+
+int center_z_compare(const void* a, const void* b) {
+    float za = ((triangle*)a)->center.z();
+    float zb = ((triangle*)b)->center.z();
 
     if (za < zb) return -1;
     else if (zb < za) return 1;
@@ -195,11 +226,11 @@ void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimi
     if (m > numPrimitivesPerLeaf) {
         const unsigned int axis = nodes[idx].split_axis();
         if (axis == 0)
-            qsort(l, m, sizeof(triangle), box_x_compare);
+            qsort(l, m, sizeof(triangle), center_x_compare);
         else if (axis == 1)
-            qsort(l, m, sizeof(triangle), box_y_compare);
+            qsort(l, m, sizeof(triangle), center_y_compare);
         else
-            qsort(l, m, sizeof(triangle), box_z_compare);
+            qsort(l, m, sizeof(triangle), center_z_compare);
 
         // split the primitives such that at most n/2 are on the left of the split and the rest are on the right
         // given we have m primitives, left will get min(n/2, m) and right gets max(0, m - n/2)
@@ -225,6 +256,7 @@ bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPe
     return nodes;
 }
 
+#ifdef SAH_BVH
 sah_bvh_node* build_sah_bvh(triangle* tris, int n, uint32_t index, int triStart, sah_aabb *boxes, float* left_area, float* right_area, int &numInternals, int &numLeaves, uint32_t &maxIndex) {
     maxIndex = max(maxIndex, index);
 
@@ -241,11 +273,11 @@ sah_bvh_node* build_sah_bvh(triangle* tris, int n, uint32_t index, int triStart,
     // find splitting axis
     int axis = main_box.split_axis();
     if (axis == 0)
-        qsort(tris, n, sizeof(triangle), box_x_compare);
+        qsort(tris, n, sizeof(triangle), bmin_x_compare);
     else if (axis == 1)
-        qsort(tris, n, sizeof(triangle), box_y_compare);
+        qsort(tris, n, sizeof(triangle), bmin_y_compare);
     else
-        qsort(tris, n, sizeof(triangle), box_z_compare);
+        qsort(tris, n, sizeof(triangle), bmin_z_compare);
 
     // collect bounds of all triangles
     for (auto i = 0; i < n; i++) {
@@ -326,6 +358,7 @@ void build_sah_bvh(triangle *tris, int n) {
 
     clean(root);
 }
+#endif
 
 // center scene around origin
 scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, float scale, bool centerAndScale) {
@@ -380,9 +413,13 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
     sc.bMax = mx;
 
     // build bvh
+#ifdef SAH_BVH
+    build_sah_bvh(sc.tris, size);
+#else
     sc.bvh = build_bvh(sc.tris, size, numPrimitivesPerLeaf, sc.bvh_size);
+#endif // SAH_BVH
 
-    //build_sah_bvh(sc.tris, size);
+
 
     if (addMarker) {
         float tc[6];
@@ -508,8 +545,10 @@ int main() {
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
     scene s = initScene(tris, numPrimitivesPerLeaf, scale, false); // passing scale=0 disables scaling the model
 
+#ifndef SAH_BVH
     //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
     save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s, numPrimitivesPerLeaf);
+#endif // !SAH_BVH
 
     delete[] s.tris;
 }
