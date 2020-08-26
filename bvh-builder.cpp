@@ -141,21 +141,33 @@ struct scene {
 };
 
 vec3 minof(const triangle* l, int n) {
-    vec3 min(INFINITY, INFINITY, INFINITY);
+    vec3 m(INFINITY, INFINITY, INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
         for (int v = 0; v < 3; v++) // for each vertice
-            for (int a = 0; a < 3; a++)
-                min[a] = fminf(min[a], l[t].v[v][a]);
-    return min;
+            m = min(m, l[t].v[v]);
+    return m;
+}
+
+vec3 center_minof(const triangle* l, int n) {
+    vec3 m(INFINITY, INFINITY, INFINITY);
+    for (int t = 0; t < n; t++) // for each triangle
+        m = min(m, l[t].center);
+    return m;
 }
 
 vec3 maxof(const triangle* l, int n) {
-    vec3 max(-INFINITY, -INFINITY, -INFINITY);
+    vec3 m(-INFINITY, -INFINITY, -INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
         for (int v = 0; v < 3; v++) // for each vertice
-            for (int a = 0; a < 3; a++)
-                max[a] = fmaxf(max[a], l[t].v[v][a]);
-    return max;
+            m = max(m, l[t].v[v]);
+    return m;
+}
+
+vec3 center_maxof(const triangle* l, int n) {
+    vec3 m(-INFINITY, -INFINITY, -INFINITY);
+    for (int t = 0; t < n; t++) // for each triangle
+        m = max(m, l[t].center);
+    return m;
 }
 
 int bmin_x_compare(const void* a, const void* b) {
@@ -224,7 +236,8 @@ void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimi
     nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
 
     if (m > numPrimitivesPerLeaf) {
-        const unsigned int axis = nodes[idx].split_axis();
+        bvh_node centroid_bounds(center_minof(l, m), center_maxof(l, m));
+        const unsigned int axis = centroid_bounds.split_axis();
         if (axis == 0)
             qsort(l, m, sizeof(triangle), center_x_compare);
         else if (axis == 1)
