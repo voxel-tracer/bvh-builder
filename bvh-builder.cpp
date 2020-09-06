@@ -51,22 +51,25 @@ struct triangle {
         v[1] = v1;
         v[2] = v2;
         meshID = mID;
-        update();
 
         for (auto i = 0; i < 6; i++)
             texCoords[i] = tc[i];
     }
 
-    void update() {
-        center = (v[0] + v[1] + v[2]) / 3;
+    vec3 center() const {
+        //return (v[0] + v[1] + v[2]) / 3;
+        return (bounds_min() + bounds_max()) / 2;
     }
 
-    vec3 bounds_min() {
+    vec3 bounds_min() const {
         return min(v[0], min(v[1], v[2]));
     }
 
+    vec3 bounds_max() const {
+        return max(v[0], max(v[1], v[2]));
+    }
+
     vec3 v[3];
-    vec3 center;
     float texCoords[6];
     unsigned char meshID;
 };
@@ -143,30 +146,28 @@ struct scene {
 vec3 minof(const triangle* l, int n) {
     vec3 m(INFINITY, INFINITY, INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
-        for (int v = 0; v < 3; v++) // for each vertice
-            m = min(m, l[t].v[v]);
+        m = min(m, l[t].bounds_min());
     return m;
 }
 
 vec3 center_minof(const triangle* l, int n) {
     vec3 m(INFINITY, INFINITY, INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
-        m = min(m, l[t].center);
+        m = min(m, l[t].center());
     return m;
 }
 
 vec3 maxof(const triangle* l, int n) {
     vec3 m(-INFINITY, -INFINITY, -INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
-        for (int v = 0; v < 3; v++) // for each vertice
-            m = max(m, l[t].v[v]);
+        m = max(m, l[t].bounds_max());
     return m;
 }
 
 vec3 center_maxof(const triangle* l, int n) {
     vec3 m(-INFINITY, -INFINITY, -INFINITY);
     for (int t = 0; t < n; t++) // for each triangle
-        m = max(m, l[t].center);
+        m = max(m, l[t].center());
     return m;
 }
 
@@ -180,8 +181,8 @@ int bmin_x_compare(const void* a, const void* b) {
 }
 
 int center_x_compare(const void* a, const void* b) {
-    float xa = ((triangle*)a)->center.x();
-    float xb = ((triangle*)b)->center.x();
+    float xa = ((triangle*)a)->center().x();
+    float xb = ((triangle*)b)->center().x();
 
     if (xa < xb) return -1;
     else if (xb < xa) return 1;
@@ -198,8 +199,8 @@ int bmin_y_compare(const void* a, const void* b) {
 }
 
 int center_y_compare(const void* a, const void* b) {
-    float ya = ((triangle*)a)->center.y();
-    float yb = ((triangle*)b)->center.y();
+    float ya = ((triangle*)a)->center().y();
+    float yb = ((triangle*)b)->center().y();
 
     if (ya < yb) return -1;
     else if (yb < ya) return 1;
@@ -216,8 +217,8 @@ int bmin_z_compare(const void* a, const void* b) {
 }
 
 int center_z_compare(const void* a, const void* b) {
-    float za = ((triangle*)a)->center.z();
-    float zb = ((triangle*)b)->center.z();
+    float za = ((triangle*)a)->center().z();
+    float zb = ((triangle*)b)->center().z();
 
     if (za < zb) return -1;
     else if (zb < za) return 1;
@@ -412,7 +413,6 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
                 vec3 v = sc.tris[t].v[i];
                 sc.tris[t].v[i] = (v - ctr) * scale / maxSize;
             }
-            sc.tris[t].update();
         }
 
         mn = minof(sc.tris, size);
@@ -505,9 +505,10 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
     return true;
 }
 
+// 00.04: no more triangle.center
 void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
     std::fstream out(output, std::ios::out | std::ios::binary);
-    const char* HEADER = "BVH_00.03";
+    const char* HEADER = "BVH_00.04";
     out.write(HEADER, strlen(HEADER) + 1);
     out.write((char*)&sc.numTris, sizeof(int));
     out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
