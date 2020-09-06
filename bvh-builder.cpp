@@ -522,7 +522,7 @@ void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
 int main() {
     float scale = 100.0f;
     mat3x3 mat = yUp;
-    int numPrimitivesPerLeaf = 5;
+    int numPrimitivesPerLeaf = 1;
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
