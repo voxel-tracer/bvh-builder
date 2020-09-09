@@ -233,10 +233,16 @@ int max(int a, int b) {
     return a > b ? a : b;
 }
 
-void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimitivesPerLeaf) {
-    nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
+struct bvh_result{
+    int numNodes = 0;
+};
 
-    if (m > numPrimitivesPerLeaf) {
+bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m) {
+    bvh_result result;
+    nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
+    result.numNodes = 1;
+
+    if (m > 1) {
         bvh_node centroid_bounds(center_minof(l, m), center_maxof(l, m));
         const unsigned int axis = centroid_bounds.split_axis();
         if (axis == 0)
@@ -248,14 +254,17 @@ void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimi
 
         // split the primitives such that at most n/2 are on the left of the split and the rest are on the right
         // given we have m primitives, left will get min(n/2, m) and right gets max(0, m - n/2)
-        build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m), numPrimitivesPerLeaf);
-        build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)), numPrimitivesPerLeaf);
+        bvh_result left = build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m));
+        result.numNodes += left.numNodes;
+        bvh_result right = build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)));
+        result.numNodes += right.numNodes;
     }
+
+    return result;
 }
 
-bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPerLeaf, int& bvh_size) {
-    // total number of leaves, given that each leaf holds up to numPrimitivesPerLeaf
-    const int numLeaves = (numPrimitives + numPrimitivesPerLeaf - 1) / numPrimitivesPerLeaf;
+bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int& bvh_size) {
+    const int numLeaves = numPrimitives;
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
     const int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
@@ -265,7 +274,8 @@ bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPe
     std::cout << "bvh_size: " << bvh_size << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
     bvh_node* nodes = new bvh_node[bvh_size];
-    build_bvh(nodes, 1, l, pow2NumLeaves * numPrimitivesPerLeaf, numPrimitives, numPrimitivesPerLeaf);
+    bvh_result result = build_bvh(nodes, 1, l, pow2NumLeaves, numPrimitives);
+    std::cout << "num internal nodes created = " << result.numNodes << std::endl;
 
     return nodes;
 }
@@ -375,22 +385,19 @@ void build_sah_bvh(triangle *tris, int n) {
 #endif
 
 // center scene around origin
-scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, float scale, bool centerAndScale) {
+scene initScene(const std::vector<triangle> &tris, float scale, bool centerAndScale) {
     scene sc;
 
-    // copy triangles to sc, append final marker if necessary
-    int size = tris.size();
-    const bool addMarker = (size % numPrimitivesPerLeaf) > 0;
-    sc.numTris = addMarker ? size + 1 : size; // add room for the end marker
+    // copy triangles to sc
+    sc.numTris = tris.size();
     sc.tris = new triangle[sc.numTris];
-
-    for (int i = 0; i < size; i++) {
+    for (int i = 0; i < sc.numTris; i++) {
         sc.tris[i] = tris[i];
     }
 
     // center scene around origin
-    vec3 mn = minof(sc.tris, size);
-    vec3 mx = maxof(sc.tris, size);
+    vec3 mn = minof(sc.tris, sc.numTris);
+    vec3 mx = maxof(sc.tris, sc.numTris);
     vec3 ctr = (mx + mn) / 2; // this is the model center
     ctr[1] = mn[1]; // make sure we can put the floor at y = 0
 
@@ -408,15 +415,15 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
         //  v = v / maxSize // scale model to fit in a bbox with maxSize 1
         //  v = v * scale // scale model so that maxSize = scale
         // => v = (v - ctr) * scale/maxSize
-        for (int t = 0; t < size; t++) {
+        for (int t = 0; t < sc.numTris; t++) {
             for (int i = 0; i < 3; i++) {
                 vec3 v = sc.tris[t].v[i];
                 sc.tris[t].v[i] = (v - ctr) * scale / maxSize;
             }
         }
 
-        mn = minof(sc.tris, size);
-        mx = maxof(sc.tris, size);
+        mn = minof(sc.tris, sc.numTris);
+        mx = maxof(sc.tris, sc.numTris);
         std::cerr << " updated model bounds:" << std::endl;
         std::cerr << "  min: " << mn << std::endl;
         std::cerr << "  max: " << mx << std::endl;
@@ -429,15 +436,8 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
 #ifdef SAH_BVH
     build_sah_bvh(sc.tris, size);
 #else
-    sc.bvh = build_bvh(sc.tris, size, numPrimitivesPerLeaf, sc.bvh_size);
+    sc.bvh = build_bvh(sc.tris, sc.numTris, sc.bvh_size);
 #endif // SAH_BVH
-
-
-
-    if (addMarker) {
-        float tc[6];
-        sc.tris[size] = triangle(vec3(INFINITY, INFINITY, INFINITY), vec3(), vec3(), tc, 0);
-    }
 
     return sc;
 }
@@ -557,7 +557,7 @@ int main() {
         return -1;
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
-    scene s = initScene(tris, numPrimitivesPerLeaf, scale, false); // passing scale=0 disables scaling the model
+    scene s = initScene(tris, scale, false);
 
 #ifndef SAH_BVH
     //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
