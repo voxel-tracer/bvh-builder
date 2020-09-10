@@ -560,11 +560,14 @@ void save(const std::string output, const scene& sc) {
     out.close();
 }
 
-int main() {
+int main(int argc, char** argv) {
     float scale = 100.0f;
     mat3x3 mat = yUp;
     int numPrimitivesPerLeaf = 1;
     float It = 2.0f;
+
+    if (argc > 1) It = strtof(argv[1], NULL);
+    std::cerr << "building bvh with It = " << It << std::endl;
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
