@@ -84,8 +84,29 @@ struct bvh_node {
 
     unsigned int split_axis() const { return max_component(max - min); }
 
+    void markLeaf() {
+        if (min[0] != max[0]) swap(0);
+        else if (min[1] != max[1])swap(1);
+        else swap(2);
+    }
+
+    float volume() const {
+        float volume = 1.0f;
+        vec3 extent = max - min;
+        for (size_t i = 0; i < 3; i++)
+            if (extent[i] > 0.0f) volume *= extent[i];
+        return volume;
+    }
+
     vec3 min;
     vec3 max;
+
+private:
+    void swap(int idx) {
+        float tmp = min[idx];
+        min[idx] = max[idx];
+        max[idx] = tmp;
+    }
 };
 
 #ifdef SAH_BVH
@@ -133,6 +154,7 @@ struct scene {
 
     bvh_node* bvh;
     int bvh_size;
+    int numLevels;
 
     vec3 bMin;
     vec3 bMax;
@@ -233,14 +255,20 @@ int max(int a, int b) {
     return a > b ? a : b;
 }
 
-struct bvh_result{
+struct bvh_result {
     int numNodes = 0;
+    float cost = 0.0f;
+    bvh_node* node;
 };
 
-bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m) {
-    bvh_result result;
-    nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
-    result.numNodes = 1;
+bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, float It) {
+    bvh_node node = bvh_node(minof(l, m), maxof(l, m));
+    nodes[idx] = node;
+    bvh_result result = {
+        1,
+        m * It, // no split cost
+        nodes + idx
+    };
 
     if (m > 1) {
         bvh_node centroid_bounds(center_minof(l, m), center_maxof(l, m));
@@ -254,27 +282,38 @@ bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m) {
 
         // split the primitives such that at most n/2 are on the left of the split and the rest are on the right
         // given we have m primitives, left will get min(n/2, m) and right gets max(0, m - n/2)
-        bvh_result left = build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m));
-        result.numNodes += left.numNodes;
-        bvh_result right = build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)));
-        result.numNodes += right.numNodes;
+        bvh_result left = build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m), It);
+        bvh_result right = build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)), It);
+
+        // compute SAH split cost = 2 * cost of traversing each child node + cost of each node scaled by the probability to hit the node
+        float splitCost = 2 + left.cost * left.node->volume() / result.node->volume() + right.cost * right.node->volume() / result.node->volume();
+        if (result.cost <= splitCost) { // do not split
+            result.node->markLeaf();
+        } else { // split
+            result.numNodes += left.numNodes;
+            result.numNodes += right.numNodes;
+            result.cost = splitCost;
+        }
+    } else if (m > 0) {
+        result.node->markLeaf();
     }
 
     return result;
 }
 
-bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int& bvh_size) {
+bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int& bvh_size, int &numLevels, float It) {
     const int numLeaves = numPrimitives;
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
-    const int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
+    numLevels = ceilf(log2f(numLeaves));
+    const int pow2NumLeaves = (int)powf(2.0f, numLevels);
     std::cout << "pow2NumLeaves: " << pow2NumLeaves << std::endl;
     // total number of nodes in the tree
     bvh_size = pow2NumLeaves * 2;
     std::cout << "bvh_size: " << bvh_size << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
     bvh_node* nodes = new bvh_node[bvh_size];
-    bvh_result result = build_bvh(nodes, 1, l, pow2NumLeaves, numPrimitives);
+    bvh_result result = build_bvh(nodes, 1, l, pow2NumLeaves, numPrimitives, It);
     std::cout << "num internal nodes created = " << result.numNodes << std::endl;
 
     return nodes;
@@ -385,7 +424,7 @@ void build_sah_bvh(triangle *tris, int n) {
 #endif
 
 // center scene around origin
-scene initScene(const std::vector<triangle> &tris, float scale, bool centerAndScale) {
+scene initScene(const std::vector<triangle> &tris, float scale, bool centerAndScale, float It) {
     scene sc;
 
     // copy triangles to sc
@@ -436,7 +475,7 @@ scene initScene(const std::vector<triangle> &tris, float scale, bool centerAndSc
 #ifdef SAH_BVH
     build_sah_bvh(sc.tris, size);
 #else
-    sc.bvh = build_bvh(sc.tris, sc.numTris, sc.bvh_size);
+    sc.bvh = build_bvh(sc.tris, sc.numTris, sc.bvh_size, sc.numLevels, It);
 #endif // SAH_BVH
 
     return sc;
@@ -460,15 +499,15 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
     if (!ret)
         return false;
 
-    std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
-    if (!materials.empty())
-        std::cerr << " materials size " << materials.size() << std::endl;
-    if (!attrib.texcoords.empty())
-        std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
-    if (!attrib.colors.empty())
-        std::cerr << " colors size " << attrib.colors.size() << std::endl;
-    if (!attrib.normals.empty())
-        std::cerr << " normals size " << attrib.normals.size() << std::endl;
+    //std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
+    //if (!materials.empty())
+    //    std::cerr << " materials size " << materials.size() << std::endl;
+    //if (!attrib.texcoords.empty())
+    //    std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
+    //if (!attrib.colors.empty())
+    //    std::cerr << " colors size " << attrib.colors.size() << std::endl;
+    //if (!attrib.normals.empty())
+    //    std::cerr << " normals size " << attrib.normals.size() << std::endl;
 
     // loop over shapes and copy all triangles to vertices vector
     uint32_t triIdx = 0;
@@ -506,9 +545,10 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
 }
 
 // 00.04: no more triangle.center
-void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
+// 00.05: SAH based node merging, - numPrimitivesPerLeaf, + numLevels
+void save(const std::string output, const scene& sc) {
     std::fstream out(output, std::ios::out | std::ios::binary);
-    const char* HEADER = "BVH_00.04";
+    const char* HEADER = "BVH_00.05";
     out.write(HEADER, strlen(HEADER) + 1);
     out.write((char*)&sc.numTris, sizeof(int));
     out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
@@ -516,7 +556,7 @@ void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
     out.write((char*)sc.bvh, sizeof(bvh_node) * sc.bvh_size);
     out.write((char*)&sc.bMin, sizeof(vec3));
     out.write((char*)&sc.bMax, sizeof(vec3));
-    out.write((char*)&numPrimitivesPerLeaf, sizeof(int));
+    out.write((char*)&sc.numLevels, sizeof(int));
     out.close();
 }
 
@@ -524,6 +564,7 @@ int main() {
     float scale = 100.0f;
     mat3x3 mat = yUp;
     int numPrimitivesPerLeaf = 1;
+    float It = 2.0f;
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
@@ -557,11 +598,11 @@ int main() {
         return -1;
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
-    scene s = initScene(tris, scale, false);
+    scene s = initScene(tris, scale, false, It);
 
 #ifndef SAH_BVH
-    //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
-    save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s, numPrimitivesPerLeaf);
+    //save("D:\\models\\obj\\cube.bvh", s);
+    save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s);
 #endif // !SAH_BVH
 
     delete[] s.tris;
