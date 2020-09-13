@@ -233,7 +233,7 @@ int max(int a, int b) {
     return a > b ? a : b;
 }
 
-void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimitivesPerLeaf) {
+uint64_t build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimitivesPerLeaf) {
     nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
 
     if (m > numPrimitivesPerLeaf) {
@@ -248,8 +248,11 @@ void build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimi
 
         // split the primitives such that at most n/2 are on the left of the split and the rest are on the right
         // given we have m primitives, left will get min(n/2, m) and right gets max(0, m - n/2)
-        build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m), numPrimitivesPerLeaf);
-        build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)), numPrimitivesPerLeaf);
+        return 1 + 
+            build_bvh(nodes, idx * 2, l, n / 2, min(n / 2, m), numPrimitivesPerLeaf) +
+            build_bvh(nodes, idx * 2 + 1, l + n / 2, n / 2, max(0, m - (n / 2)), numPrimitivesPerLeaf);
+    } else {
+        return 1;
     }
 }
 
@@ -265,7 +268,8 @@ bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPe
     std::cout << "bvh_size: " << bvh_size << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
     bvh_node* nodes = new bvh_node[bvh_size];
-    build_bvh(nodes, 1, l, pow2NumLeaves * numPrimitivesPerLeaf, numPrimitives, numPrimitivesPerLeaf);
+    uint64_t numNodes = build_bvh(nodes, 1, l, pow2NumLeaves * numPrimitivesPerLeaf, numPrimitives, numPrimitivesPerLeaf);
+    std::cerr << "num internal nodes = " << numNodes << std::endl;
 
     return nodes;
 }
