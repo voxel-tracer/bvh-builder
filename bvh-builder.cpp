@@ -287,13 +287,13 @@ bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, float 
 
         // compute SAH split cost = 2 * cost of traversing each child node + cost of each node scaled by the probability to hit the node
         float splitCost = 2 + left.cost * left.node->volume() / result.node->volume() + right.cost * right.node->volume() / result.node->volume();
-        if (result.cost <= splitCost) { // do not split
-            result.node->markLeaf();
-        } else { // split
+        //if (result.cost <= splitCost) { // do not split
+        //    result.node->markLeaf();
+        //} else { // split
             result.numNodes += left.numNodes;
             result.numNodes += right.numNodes;
             result.cost = splitCost;
-        }
+        //}
     } else if (m > 0) {
         result.node->markLeaf();
     }
