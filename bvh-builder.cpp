@@ -85,9 +85,7 @@ struct bvh_node {
     unsigned int split_axis() const { return max_component(max - min); }
 
     void markLeaf() {
-        if (min[0] != max[0]) swap(0);
-        else if (min[1] != max[1])swap(1);
-        else swap(2);
+        min[0] += 1000;
     }
 
     float volume() const {
@@ -263,6 +261,8 @@ struct bvh_result {
 
 bvh_result build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, float It) {
     bvh_node node = bvh_node(minof(l, m), maxof(l, m));
+    if ((node.min[0] >= 500) || ((node.min[0] + 1000) < 500)) std::cerr << "node.min.x " << node.min[0] << std::endl;
+
     nodes[idx] = node;
     bvh_result result = {
         1,
@@ -546,9 +546,10 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
 
 // 00.04: no more triangle.center
 // 00.05: SAH based node merging, - numPrimitivesPerLeaf, + numLevels
+// 00.06: add 500 to bvh_node.min[0] if its a leaf
 void save(const std::string output, const scene& sc) {
     std::fstream out(output, std::ios::out | std::ios::binary);
-    const char* HEADER = "BVH_00.05";
+    const char* HEADER = "BVH_00.06";
     out.write(HEADER, strlen(HEADER) + 1);
     out.write((char*)&sc.numTris, sizeof(int));
     out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
