@@ -44,9 +44,37 @@ const mat3x3 zUp = {
     vec3(0,-1,0)
 };
 
-struct triangle {
-    triangle() {}
-    triangle(vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID) {
+struct aabb {
+    vec3 _min;
+    vec3 _max;
+
+    aabb() : _min(vec3(INFINITY, INFINITY, INFINITY)), _max(vec3(-INFINITY, -INFINITY, -INFINITY)) {}
+
+    void grow(vec3 v) {
+        _min = min(_min, v);
+        _max = max(_max, v);
+    }
+
+    void grow(aabb b) {
+        _min = min(_min, b._min);
+        _max = max(_max, b._max);
+    }
+
+    vec3 centroid() const {
+        return (_max + _min) * 0.5;
+    }
+
+    unsigned int split_axis() const { return max_component(_max - _min); }
+};
+
+struct btriangle {
+    vec3 v[3];
+    float texCoords[6];
+    unsigned char meshID;
+    aabb bounds;
+
+    btriangle() {}
+    btriangle(vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID) {
         v[0] = v0;
         v[1] = v1;
         v[2] = v2;
@@ -54,20 +82,37 @@ struct triangle {
 
         for (auto i = 0; i < 6; i++)
             texCoords[i] = tc[i];
+
+        bounds.grow(v0);
+        bounds.grow(v1);
+        bounds.grow(v2);
+    }
+};
+
+struct triangle {
+    triangle() {}
+    triangle(const btriangle &t) {
+        v[0] = t.v[0];
+        v[1] = t.v[1];
+        v[2] = t.v[2];
+        meshID = t.meshID;
+
+        for (auto i = 0; i < 6; i++)
+            texCoords[i] = t.texCoords[i];
     }
 
-    vec3 center() const {
-        //return (v[0] + v[1] + v[2]) / 3;
-        return (bounds_min() + bounds_max()) / 2;
-    }
-
-    vec3 bounds_min() const {
-        return min(v[0], min(v[1], v[2]));
-    }
-
-    vec3 bounds_max() const {
-        return max(v[0], max(v[1], v[2]));
-    }
+//    vec3 center() const {
+//        //return (v[0] + v[1] + v[2]) / 3;
+//        return (bounds_min() + bounds_max()) / 2;
+//    }
+//
+//    vec3 bounds_min() const {
+//        return min(v[0], min(v[1], v[2]));
+//    }
+//
+//    vec3 bounds_max() const {
+//        return max(v[0], max(v[1], v[2]));
+//    }
 
     vec3 v[3];
     float texCoords[6];
@@ -78,15 +123,15 @@ struct triangle {
 non-leaf nodes represent bounding box of all spheres that are inside it
 leaf nodes represent 2 spheres
 */
-struct bvh_node {
-    bvh_node() {}
-    bvh_node(const vec3& min, const vec3& max) :min(min), max(max) {}
-
-    unsigned int split_axis() const { return max_component(max - min); }
-
-    vec3 min;
-    vec3 max;
-};
+//struct bvh_node {
+//    bvh_node() {}
+//    bvh_node(const vec3& min, const vec3& max) :min(min), max(max) {}
+//
+//    unsigned int split_axis() const { return max_component(max - min); }
+//
+//    vec3 min;
+//    vec3 max;
+//};
 
 #ifdef SAH_BVH
 struct sah_aabb {
@@ -128,10 +173,10 @@ struct sah_bvh_node {
 #endif
 
 struct scene {
-    triangle* tris;
+    btriangle* tris;
     int numTris;
 
-    bvh_node* bvh;
+    aabb* bvh;
     int bvh_size;
 
     vec3 bMin;
@@ -143,82 +188,82 @@ struct scene {
     }
 };
 
-vec3 minof(const triangle* l, int n) {
-    vec3 m(INFINITY, INFINITY, INFINITY);
-    for (int t = 0; t < n; t++) // for each triangle
-        m = min(m, l[t].bounds_min());
-    return m;
-}
+//vec3 minof(const triangle* l, int n) {
+//    vec3 m(INFINITY, INFINITY, INFINITY);
+//    for (int t = 0; t < n; t++) // for each triangle
+//        m = min(m, l[t].bounds_min());
+//    return m;
+//}
+//
+//vec3 center_minof(const triangle* l, int n) {
+//    vec3 m(INFINITY, INFINITY, INFINITY);
+//    for (int t = 0; t < n; t++) // for each triangle
+//        m = min(m, l[t].center());
+//    return m;
+//}
+//
+//vec3 maxof(const triangle* l, int n) {
+//    vec3 m(-INFINITY, -INFINITY, -INFINITY);
+//    for (int t = 0; t < n; t++) // for each triangle
+//        m = max(m, l[t].bounds_max());
+//    return m;
+//}
+//
+//vec3 center_maxof(const triangle* l, int n) {
+//    vec3 m(-INFINITY, -INFINITY, -INFINITY);
+//    for (int t = 0; t < n; t++) // for each triangle
+//        m = max(m, l[t].center());
+//    return m;
+//}
 
-vec3 center_minof(const triangle* l, int n) {
-    vec3 m(INFINITY, INFINITY, INFINITY);
-    for (int t = 0; t < n; t++) // for each triangle
-        m = min(m, l[t].center());
-    return m;
-}
-
-vec3 maxof(const triangle* l, int n) {
-    vec3 m(-INFINITY, -INFINITY, -INFINITY);
-    for (int t = 0; t < n; t++) // for each triangle
-        m = max(m, l[t].bounds_max());
-    return m;
-}
-
-vec3 center_maxof(const triangle* l, int n) {
-    vec3 m(-INFINITY, -INFINITY, -INFINITY);
-    for (int t = 0; t < n; t++) // for each triangle
-        m = max(m, l[t].center());
-    return m;
-}
-
-int bmin_x_compare(const void* a, const void* b) {
-    float xa = ((triangle*)a)->bounds_min().x();
-    float xb = ((triangle*)b)->bounds_min().x();
-
-    if (xa < xb) return -1;
-    else if (xb < xa) return 1;
-    return 0;
-}
+//int bmin_x_compare(const void* a, const void* b) {
+//    float xa = ((triangle*)a)->bounds_min().x();
+//    float xb = ((triangle*)b)->bounds_min().x();
+//
+//    if (xa < xb) return -1;
+//    else if (xb < xa) return 1;
+//    return 0;
+//}
 
 int center_x_compare(const void* a, const void* b) {
-    float xa = ((triangle*)a)->center().x();
-    float xb = ((triangle*)b)->center().x();
+    float xa = ((btriangle*)a)->bounds.centroid().x();
+    float xb = ((btriangle*)b)->bounds.centroid().x();
 
     if (xa < xb) return -1;
     else if (xb < xa) return 1;
     return 0;
 }
 
-int bmin_y_compare(const void* a, const void* b) {
-    float ya = ((triangle*)a)->bounds_min().y();
-    float yb = ((triangle*)b)->bounds_min().y();
-
-    if (ya < yb) return -1;
-    else if (yb < ya) return 1;
-    return 0;
-}
+//int bmin_y_compare(const void* a, const void* b) {
+//    float ya = ((triangle*)a)->bounds_min().y();
+//    float yb = ((triangle*)b)->bounds_min().y();
+//
+//    if (ya < yb) return -1;
+//    else if (yb < ya) return 1;
+//    return 0;
+//}
 
 int center_y_compare(const void* a, const void* b) {
-    float ya = ((triangle*)a)->center().y();
-    float yb = ((triangle*)b)->center().y();
+    float ya = ((btriangle*)a)->bounds.centroid().y();
+    float yb = ((btriangle*)b)->bounds.centroid().y();
 
     if (ya < yb) return -1;
     else if (yb < ya) return 1;
     return 0;
 }
 
-int bmin_z_compare(const void* a, const void* b) {
-    float za = ((triangle*)a)->bounds_min().z();
-    float zb = ((triangle*)b)->bounds_min().z();
-
-    if (za < zb) return -1;
-    else if (zb < za) return 1;
-    return 0;
-}
+//int bmin_z_compare(const void* a, const void* b) {
+//    float za = ((triangle*)a)->bounds_min().z();
+//    float zb = ((triangle*)b)->bounds_min().z();
+//
+//    if (za < zb) return -1;
+//    else if (zb < za) return 1;
+//    return 0;
+//}
 
 int center_z_compare(const void* a, const void* b) {
-    float za = ((triangle*)a)->center().z();
-    float zb = ((triangle*)b)->center().z();
+    float za = ((btriangle*)a)->bounds.centroid().z();
+    float zb = ((btriangle*)b)->bounds.centroid().z();
 
     if (za < zb) return -1;
     else if (zb < za) return 1;
@@ -233,18 +278,23 @@ int max(int a, int b) {
     return a > b ? a : b;
 }
 
-uint64_t build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numPrimitivesPerLeaf) {
-    nodes[idx] = bvh_node(minof(l, m), maxof(l, m));
+uint64_t build_bvh(aabb* nodes, int idx, btriangle* l, int n, int m, int numPrimitivesPerLeaf) {
+    aabb node;
+    aabb centroid_bounds;
+    for (int i = 0; i < m; i++) {
+        node.grow(l[i].bounds);
+        centroid_bounds.grow(l[i].bounds.centroid());
+    }
+    nodes[idx] = node;
 
     if (m > numPrimitivesPerLeaf) {
-        bvh_node centroid_bounds(center_minof(l, m), center_maxof(l, m));
         const unsigned int axis = centroid_bounds.split_axis();
         if (axis == 0)
-            qsort(l, m, sizeof(triangle), center_x_compare);
+            qsort(l, m, sizeof(btriangle), center_x_compare);
         else if (axis == 1)
-            qsort(l, m, sizeof(triangle), center_y_compare);
+            qsort(l, m, sizeof(btriangle), center_y_compare);
         else
-            qsort(l, m, sizeof(triangle), center_z_compare);
+            qsort(l, m, sizeof(btriangle), center_z_compare);
 
         // split the primitives such that at most n/2 are on the left of the split and the rest are on the right
         // given we have m primitives, left will get min(n/2, m) and right gets max(0, m - n/2)
@@ -256,7 +306,7 @@ uint64_t build_bvh(bvh_node* nodes, int idx, triangle* l, int n, int m, int numP
     }
 }
 
-bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPerLeaf, int& bvh_size) {
+aabb* build_bvh(btriangle* l, unsigned int numPrimitives, int numPrimitivesPerLeaf, int& bvh_size) {
     // total number of leaves, given that each leaf holds up to numPrimitivesPerLeaf
     const int numLeaves = (numPrimitives + numPrimitivesPerLeaf - 1) / numPrimitivesPerLeaf;
     std::cout << "numLeaves: " << numLeaves << std::endl;
@@ -267,7 +317,7 @@ bvh_node* build_bvh(triangle* l, unsigned int numPrimitives, int numPrimitivesPe
     bvh_size = pow2NumLeaves * 2;
     std::cout << "bvh_size: " << bvh_size << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
-    bvh_node* nodes = new bvh_node[bvh_size];
+    aabb* nodes = new aabb[bvh_size];
     uint64_t numNodes = build_bvh(nodes, 1, l, pow2NumLeaves * numPrimitivesPerLeaf, numPrimitives, numPrimitivesPerLeaf);
     std::cerr << "num internal nodes = " << numNodes << std::endl;
 
@@ -379,32 +429,36 @@ void build_sah_bvh(triangle *tris, int n) {
 #endif
 
 // center scene around origin
-scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, float scale, bool centerAndScale) {
+scene initScene(const std::vector<btriangle> &tris, int numPrimitivesPerLeaf, float scale, bool centerAndScale) {
     scene sc;
 
     // copy triangles to sc, append final marker if necessary
     int size = tris.size();
     const bool addMarker = (size % numPrimitivesPerLeaf) > 0;
     sc.numTris = addMarker ? size + 1 : size; // add room for the end marker
-    sc.tris = new triangle[sc.numTris];
+    sc.tris = new btriangle[sc.numTris];
 
     for (int i = 0; i < size; i++) {
         sc.tris[i] = tris[i];
     }
 
     // center scene around origin
-    vec3 mn = minof(sc.tris, size);
-    vec3 mx = maxof(sc.tris, size);
-    vec3 ctr = (mx + mn) / 2; // this is the model center
-    ctr[1] = mn[1]; // make sure we can put the floor at y = 0
+    aabb bounds;
+    for (int i = 0; i < size; i++) {
+        bounds.grow(sc.tris[i].bounds);
+    }
+    //vec3 mn = minof(sc.tris, size);
+    //vec3 mx = maxof(sc.tris, size);
+    vec3 ctr = bounds.centroid(); // this is the model center
+    ctr[1] = bounds._min[1]; // make sure we can put the floor at y = 0
 
     std::cerr << " original model bounds:" << std::endl;
-    std::cerr << "  min: " << mn << std::endl;
-    std::cerr << "  max: " << mx << std::endl;
+    std::cerr << "  min: " << bounds._min << std::endl;
+    std::cerr << "  max: " << bounds._max << std::endl;
 
     if (centerAndScale) {
         // find max size across all axes
-        const float maxSize = max(mx - mn);
+        const float maxSize = max(bounds._max - bounds._min);
         if (scale == 0) scale = maxSize;
         // we want to normalize the model so that its maxSize is scale and centered around ctr
         // for each vertex v:
@@ -412,22 +466,24 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
         //  v = v / maxSize // scale model to fit in a bbox with maxSize 1
         //  v = v * scale // scale model so that maxSize = scale
         // => v = (v - ctr) * scale/maxSize
+        aabb new_bounds;
+        vec3 vs[3];
         for (int t = 0; t < size; t++) {
             for (int i = 0; i < 3; i++) {
-                vec3 v = sc.tris[t].v[i];
-                sc.tris[t].v[i] = (v - ctr) * scale / maxSize;
+                vs[i] = (sc.tris[t].v[i] - ctr) * scale / maxSize;
             }
+            sc.tris[t] = btriangle(vs[0], vs[1], vs[2], sc.tris[t].texCoords, sc.tris[t].meshID);
+            new_bounds.grow(sc.tris[t].bounds);
         }
 
-        mn = minof(sc.tris, size);
-        mx = maxof(sc.tris, size);
+        bounds = new_bounds;
         std::cerr << " updated model bounds:" << std::endl;
-        std::cerr << "  min: " << mn << std::endl;
-        std::cerr << "  max: " << mx << std::endl;
+        std::cerr << "  min: " << bounds._min << std::endl;
+        std::cerr << "  max: " << bounds._max << std::endl;
     }
 
-    sc.bMin = mn;
-    sc.bMax = mx;
+    sc.bMin = bounds._min;
+    sc.bMax = bounds._max;
 
     // build bvh
 #ifdef SAH_BVH
@@ -440,13 +496,13 @@ scene initScene(const std::vector<triangle> &tris, int numPrimitivesPerLeaf, flo
 
     if (addMarker) {
         float tc[6];
-        sc.tris[size] = triangle(vec3(INFINITY, INFINITY, INFINITY), vec3(), vec3(), tc, 0);
+        sc.tris[size] = btriangle(vec3(INFINITY, INFINITY, INFINITY), vec3(), vec3(), tc, 0);
     }
 
     return sc;
 }
 
-bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<triangle> &tris, unsigned char meshID) {
+bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<btriangle> &tris, unsigned char meshID) {
     tinyobj::attrib_t attrib;
     std::vector<tinyobj::shape_t> shapes;
     std::vector<tinyobj::material_t> materials;
@@ -501,7 +557,7 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
                 tc[v * 2 + 0] = tx;
                 tc[v * 2 + 1] = ty;
             }
-            tris.push_back(triangle(verts[0], verts[1], verts[2], tc, meshID));
+            tris.push_back(btriangle(verts[0], verts[1], verts[2], tc, meshID));
             index_offset += 3;
         }
     }
@@ -511,17 +567,25 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<tri
 
 // 00.04: no more triangle.center
 void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
+    // convert btriangle to triangle
+    triangle* tris = new triangle[sc.numTris];
+    for (int i = 0; i < sc.numTris; i++) {
+        tris[i] = triangle(sc.tris[i]);
+    }
+
     std::fstream out(output, std::ios::out | std::ios::binary);
     const char* HEADER = "BVH_00.04";
     out.write(HEADER, strlen(HEADER) + 1);
     out.write((char*)&sc.numTris, sizeof(int));
-    out.write((char*)sc.tris, sizeof(triangle) * sc.numTris);
+    out.write((char*)tris, sizeof(triangle) * sc.numTris);
     out.write((char*)&sc.bvh_size, sizeof(int));
-    out.write((char*)sc.bvh, sizeof(bvh_node) * sc.bvh_size);
+    out.write((char*)sc.bvh, sizeof(aabb) * sc.bvh_size);
     out.write((char*)&sc.bMin, sizeof(vec3));
     out.write((char*)&sc.bMax, sizeof(vec3));
     out.write((char*)&numPrimitivesPerLeaf, sizeof(int));
     out.close();
+
+    delete[] tris;
 }
 
 int main() {
@@ -531,7 +595,7 @@ int main() {
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
-    std::vector<triangle> tris;
+    std::vector<btriangle> tris;
     bool success = true;
 
     success = success && loadFromObj(basePath + "Black.obj", yUp, tris, 0);
