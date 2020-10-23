@@ -101,37 +101,10 @@ struct triangle {
             texCoords[i] = t.texCoords[i];
     }
 
-//    vec3 center() const {
-//        //return (v[0] + v[1] + v[2]) / 3;
-//        return (bounds_min() + bounds_max()) / 2;
-//    }
-//
-//    vec3 bounds_min() const {
-//        return min(v[0], min(v[1], v[2]));
-//    }
-//
-//    vec3 bounds_max() const {
-//        return max(v[0], max(v[1], v[2]));
-//    }
-
     vec3 v[3];
     float texCoords[6];
     unsigned char meshID;
 };
-
-/**
-non-leaf nodes represent bounding box of all spheres that are inside it
-leaf nodes represent 2 spheres
-*/
-//struct bvh_node {
-//    bvh_node() {}
-//    bvh_node(const vec3& min, const vec3& max) :min(min), max(max) {}
-//
-//    unsigned int split_axis() const { return max_component(max - min); }
-//
-//    vec3 min;
-//    vec3 max;
-//};
 
 #ifdef SAH_BVH
 struct sah_aabb {
@@ -188,43 +161,6 @@ struct scene {
     }
 };
 
-//vec3 minof(const triangle* l, int n) {
-//    vec3 m(INFINITY, INFINITY, INFINITY);
-//    for (int t = 0; t < n; t++) // for each triangle
-//        m = min(m, l[t].bounds_min());
-//    return m;
-//}
-//
-//vec3 center_minof(const triangle* l, int n) {
-//    vec3 m(INFINITY, INFINITY, INFINITY);
-//    for (int t = 0; t < n; t++) // for each triangle
-//        m = min(m, l[t].center());
-//    return m;
-//}
-//
-//vec3 maxof(const triangle* l, int n) {
-//    vec3 m(-INFINITY, -INFINITY, -INFINITY);
-//    for (int t = 0; t < n; t++) // for each triangle
-//        m = max(m, l[t].bounds_max());
-//    return m;
-//}
-//
-//vec3 center_maxof(const triangle* l, int n) {
-//    vec3 m(-INFINITY, -INFINITY, -INFINITY);
-//    for (int t = 0; t < n; t++) // for each triangle
-//        m = max(m, l[t].center());
-//    return m;
-//}
-
-//int bmin_x_compare(const void* a, const void* b) {
-//    float xa = ((triangle*)a)->bounds_min().x();
-//    float xb = ((triangle*)b)->bounds_min().x();
-//
-//    if (xa < xb) return -1;
-//    else if (xb < xa) return 1;
-//    return 0;
-//}
-
 int center_x_compare(const void* a, const void* b) {
     float xa = ((btriangle*)a)->bounds.centroid().x();
     float xb = ((btriangle*)b)->bounds.centroid().x();
@@ -234,15 +170,6 @@ int center_x_compare(const void* a, const void* b) {
     return 0;
 }
 
-//int bmin_y_compare(const void* a, const void* b) {
-//    float ya = ((triangle*)a)->bounds_min().y();
-//    float yb = ((triangle*)b)->bounds_min().y();
-//
-//    if (ya < yb) return -1;
-//    else if (yb < ya) return 1;
-//    return 0;
-//}
-
 int center_y_compare(const void* a, const void* b) {
     float ya = ((btriangle*)a)->bounds.centroid().y();
     float yb = ((btriangle*)b)->bounds.centroid().y();
@@ -251,15 +178,6 @@ int center_y_compare(const void* a, const void* b) {
     else if (yb < ya) return 1;
     return 0;
 }
-
-//int bmin_z_compare(const void* a, const void* b) {
-//    float za = ((triangle*)a)->bounds_min().z();
-//    float zb = ((triangle*)b)->bounds_min().z();
-//
-//    if (za < zb) return -1;
-//    else if (zb < za) return 1;
-//    return 0;
-//}
 
 int center_z_compare(const void* a, const void* b) {
     float za = ((btriangle*)a)->bounds.centroid().z();
@@ -447,8 +365,6 @@ scene initScene(const std::vector<btriangle> &tris, int numPrimitivesPerLeaf, fl
     for (int i = 0; i < size; i++) {
         bounds.grow(sc.tris[i].bounds);
     }
-    //vec3 mn = minof(sc.tris, size);
-    //vec3 mx = maxof(sc.tris, size);
     vec3 ctr = bounds.centroid(); // this is the model center
     ctr[1] = bounds._min[1]; // make sure we can put the floor at y = 0
 
