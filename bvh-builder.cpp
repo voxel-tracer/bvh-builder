@@ -65,6 +65,15 @@ struct aabb {
     }
 
     unsigned int split_axis() const { return max_component(_max - _min); }
+
+    // return true if this aabb's split plane splits the passed node
+    bool doesItSplit(const aabb& node) const {
+        int axis = split_axis();
+        float middle = centroid()[axis];
+        return middle > node._min[axis] && middle < node._max[axis];
+    }
+
+    vec3 size() const { return _max - _min; }
 };
 
 struct btriangle {
@@ -72,6 +81,9 @@ struct btriangle {
     float texCoords[6];
     unsigned char meshID;
     aabb bounds;
+
+    int s; // number of splits
+    int bestIdx; // most important node that this triangle intersects
 
     btriangle() {}
     btriangle(vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID) {
@@ -224,22 +236,138 @@ uint64_t build_bvh(aabb* nodes, int idx, btriangle* l, int n, int m, int numPrim
     }
 }
 
-aabb* build_bvh(btriangle* l, unsigned int numPrimitives, int numPrimitivesPerLeaf, int& bvh_size) {
-    // total number of leaves, given that each leaf holds up to numPrimitivesPerLeaf
-    const int numLeaves = (numPrimitives + numPrimitivesPerLeaf - 1) / numPrimitivesPerLeaf;
+float computeEmptySurfaceArea(const btriangle &tri) {
+    // compute aabb surface area
+    vec3 boundsExtent = tri.bounds.size();
+    float Aaabb = 2 * (boundsExtent.x() * boundsExtent.y() + boundsExtent.x() * boundsExtent.z() + boundsExtent.y() * boundsExtent.z());
+
+    // compute ideal surface area
+    vec3 d1 = tri.v[1] - tri.v[0];
+    vec3 d2 = tri.v[2] - tri.v[0];
+    vec3 cr = cross(d1, d2);
+    float Aideal = abs(cr.x()) + abs(cr.y()) + abs(cr.z());
+
+    float value = (Aaabb - Aideal);
+    return value;
+}
+
+float computeNodeImportance(const aabb &triBounds, int triIdx, const aabb* bvh, int bvhSize, int &bestIdx) {
+    int level = log2f(bvhSize);
+    int best = level;
+    int idx = (bvhSize + triIdx) / 2;
+
+    bestIdx = -1;
+    while (idx > 0) {
+        if (bvh[idx].doesItSplit(triBounds)) {
+            bestIdx = idx;
+            best = level;
+        }
+        level--;
+        idx >>= 1;
+    }
+
+    return powf(2, -best);
+}
+
+float computePriority(const btriangle &tri, int triIdx, const aabb* bvh, int bvhSize, int &bestIdx) {
+    float importance = computeNodeImportance(tri.bounds, triIdx, bvh, bvhSize, bestIdx);
+    float emptyArea = computeEmptySurfaceArea(tri);
+
+    float X = 2.0f;
+    float Y = 1.0f / 3.0f;
+    float priority = powf(powf(X, importance) * emptyArea, Y);
+    return priority;
+}
+
+float sumf(const float* priority, int size) {
+    float s = 0;
+    for (int t = 0; t < size; t++)
+        s += priority[t];
+    return s;
+}
+
+int sumi(const float* priority, float D, int size) {
+    int s = 0;
+    for (int t = 0; t < size; t++)
+        s += D * priority[t];
+    return s;
+}
+
+float computeSplitD(const float* priority, int size, int Sbudget) {
+    // start by estimating Dmin, Dmax
+    float Dmin = Sbudget / sumf(priority, size);
+    int Smin = sumi(priority, Dmin, size);
+    float Dmax = Dmin * Sbudget / Smin;
+    int Smax = sumi(priority, Dmax, size);
+    std::cerr << "Dmin = " << Dmin << " (" << Smin << "). Dmax = " << Dmax << " (" << Smax << ")" << std::endl;
+    // use bissection and iterate 6 times
+    while (true) {
+        float Davg = (Dmin + Dmax) / 2;
+        int Savg = sumi(priority, Davg, size);
+        if (Savg == Smin || Savg == Smax) break;
+
+        if (Savg > Sbudget) {
+            Smax = Savg;
+            Dmax = Davg;
+        }
+        else {
+            Smin = Savg;
+            Dmin = Davg;
+        }
+        std::cerr << "Dmin = " << Dmin << " (" << Smin << "). Dmax = " << Dmax << " (" << Smax << ")" << std::endl;
+    }
+
+    return Dmin;
+}
+
+int computeNumSplits(btriangle* tris, int size, const aabb* bvh, int bvhSize, int Sbudget) {
+    // compute and store split priority for each triangle
+    float* priority = new float[size];
+    for (int t = 0; t < size; t++)
+        priority[t] = computePriority(tris[t], t, bvh, bvhSize, tris[t].bestIdx);
+    // compute split D
+    float D = computeSplitD(priority, size, Sbudget);
+    // compute num splits for each triangle
+    int numSplits = 0;
+    for (int t = 0; t < size; t++) {
+        tris[t].s = D * priority[t];
+        numSplits += tris[t].s;
+    }
+
+    delete[] priority;
+
+    return numSplits;
+}
+
+aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles) {
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
     const int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
     std::cout << "pow2NumLeaves: " << pow2NumLeaves << std::endl;
     // total number of nodes in the tree
-    bvh_size = pow2NumLeaves * 2;
-    std::cout << "bvh_size: " << bvh_size << std::endl;
+    bvhSize = pow2NumLeaves * 2;
+    std::cout << "bvh_size: " << bvhSize << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
-    aabb* nodes = new aabb[bvh_size];
-    uint64_t numNodes = build_bvh(nodes, 1, l, pow2NumLeaves * numPrimitivesPerLeaf, numPrimitives, numPrimitivesPerLeaf);
+    aabb* bvh = new aabb[bvhSize];
+    uint64_t numNodes = build_bvh(bvh, 1, l, pow2NumLeaves, numLeaves, 1);
     std::cerr << "num internal nodes = " << numNodes << std::endl;
 
-    return nodes;
+    // should we split ? and can we actually split ?
+    if (!splitTriangles || pow2NumLeaves == numLeaves) {
+        return bvh; // do not split
+    }
+    // start splitting the triangles
+    std::cerr << "start splitting triangles. We will add " << (pow2NumLeaves - numLeaves) << " extra splits" << std::endl;
+    // allocate enough triangles to store all triangles including the splits
+    btriangle* l2 = new btriangle[pow2NumLeaves];
+    for (int i = 0; i < numLeaves; i++) {
+        l2[i] = l[i];
+    }
+    // compute for each triangle its num splits and most important node idx
+    int numSplits = computeNumSplits(l2, numLeaves, bvh, bvhSize, pow2NumLeaves - numLeaves);
+    std::cerr << "adding an additional " << numSplits << " splits" << std::endl;
+
+    return bvh;
 }
 
 #ifdef SAH_BVH
@@ -347,13 +475,11 @@ void build_sah_bvh(triangle *tris, int n) {
 #endif
 
 // center scene around origin
-scene initScene(const std::vector<btriangle> &tris, int numPrimitivesPerLeaf, float scale, bool centerAndScale) {
+scene initScene(const std::vector<btriangle> &tris, float scale, bool centerAndScale, bool splitTriangles) {
     scene sc;
 
-    // copy triangles to sc, append final marker if necessary
     int size = tris.size();
-    const bool addMarker = (size % numPrimitivesPerLeaf) > 0;
-    sc.numTris = addMarker ? size + 1 : size; // add room for the end marker
+    sc.numTris = size;
     sc.tris = new btriangle[sc.numTris];
 
     for (int i = 0; i < size; i++) {
@@ -405,15 +531,8 @@ scene initScene(const std::vector<btriangle> &tris, int numPrimitivesPerLeaf, fl
 #ifdef SAH_BVH
     build_sah_bvh(sc.tris, size);
 #else
-    sc.bvh = build_bvh(sc.tris, size, numPrimitivesPerLeaf, sc.bvh_size);
+    sc.bvh = build_bvh(sc.tris, size, sc.bvh_size, splitTriangles);
 #endif // SAH_BVH
-
-
-
-    if (addMarker) {
-        float tc[6];
-        sc.tris[size] = btriangle(vec3(INFINITY, INFINITY, INFINITY), vec3(), vec3(), tc, 0);
-    }
 
     return sc;
 }
@@ -507,7 +626,7 @@ void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
 int main() {
     float scale = 100.0f;
     mat3x3 mat = yUp;
-    int numPrimitivesPerLeaf = 1;
+    bool splitTriangles = true;
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
@@ -541,11 +660,11 @@ int main() {
         return -1;
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
-    scene s = initScene(tris, numPrimitivesPerLeaf, scale, false); // passing scale=0 disables scaling the model
+    scene s = initScene(tris, scale, false, splitTriangles); // passing scale=0 disables scaling the model
 
 #ifndef SAH_BVH
     //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
-    save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s, numPrimitivesPerLeaf);
+    save("C:\\Users\\adene\\models\\BVH\\staircase.bvh", s, 1);
 #endif // !SAH_BVH
 
     delete[] s.tris;
