@@ -84,6 +84,14 @@ __host__ __device__ inline vec3 operator*(const vec3 &v, float t) {
     return vec3(t*v.e[0], t*v.e[1], t*v.e[2]);
 }
 
+__host__ __device__ inline bool operator==(const vec3& v1, const vec3& v2) {
+    return v1[0] == v2[0] && v1[1] == v2[1] && v1[2] == v2[2];
+}
+
+__host__ __device__ inline bool operator!=(const vec3& v1, const vec3& v2) {
+    return !(v1 == v2);
+}
+
 __host__ __device__ inline float dot(const vec3 &v1, const vec3 &v2) {
     return v1.e[0] *v2.e[0] + v1.e[1] *v2.e[1]  + v1.e[2] *v2.e[2];
 }
@@ -145,6 +153,10 @@ __host__ __device__ inline vec3 floor(const vec3& v) {
 
 __host__ __device__ inline bool isnan(const vec3& v) {
     return isnan(v.x()) || isnan(v.y()) || isnan(v.z());
+}
+
+__host__ __device__ inline vec3 lerp(const vec3& v0, const vec3& v1, int t) {
+    return (1.0f - t) * v0 + t * v1;
 }
 
 __host__ __device__ inline vec3& vec3::operator+=(const vec3 &v){

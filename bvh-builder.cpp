@@ -49,15 +49,21 @@ struct aabb {
     vec3 _max;
 
     aabb() : _min(vec3(INFINITY, INFINITY, INFINITY)), _max(vec3(-INFINITY, -INFINITY, -INFINITY)) {}
+    aabb(const aabb& node): _min(node._min), _max(node._max) {}
 
     void grow(vec3 v) {
         _min = min(_min, v);
         _max = max(_max, v);
     }
 
-    void grow(aabb b) {
+    void grow(const aabb &b) {
         _min = min(_min, b._min);
         _max = max(_max, b._max);
+    }
+
+    void intersect(const aabb& node) {
+        _min = max(_min, node._min);
+        _max = min(_max, node._max);
     }
 
     vec3 centroid() const {
@@ -74,6 +80,31 @@ struct aabb {
     }
 
     vec3 size() const { return _max - _min; }
+
+    aabb leftSplit() const {
+        int axis = split_axis();
+        float splitPos = centroid()[axis];
+
+        aabb left(*this);
+        left._max[axis] = splitPos;
+
+        return left;
+    }
+
+    aabb rightSplit() const {
+        int axis = split_axis();
+        float splitPos = centroid()[axis];
+
+        aabb right(*this);
+        right._min[axis] = splitPos;
+
+        return right;
+    }
+
+    bool contains(const aabb& node) const {
+        return node._min.x() >= _min.x() && node._min.y() >= _min.y() && node._min.z() >= _min.z() &&
+            node._max.x() <= _max.x() && node._max.y() <= _max.y() && node._max.z() <= _max.z();
+    }
 };
 
 struct btriangle {
@@ -86,6 +117,19 @@ struct btriangle {
     int bestIdx; // most important node that this triangle intersects
 
     btriangle() {}
+    btriangle(const btriangle& tri, const aabb& node) {
+        v[0] = tri.v[0];
+        v[1] = tri.v[1];
+        v[2] = tri.v[2];
+        meshID = tri.meshID;
+        bestIdx = tri.bestIdx;
+
+        for (auto i = 0; i < 6; i++)
+            texCoords[i] = tri.texCoords[i];
+
+        bounds = node;
+    }
+
     btriangle(vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID) {
         v[0] = v0;
         v[1] = v1;
@@ -254,7 +298,9 @@ float computeEmptySurfaceArea(const btriangle &tri) {
 float computeNodeImportance(const aabb &triBounds, int triIdx, const aabb* bvh, int bvhSize, int &bestIdx) {
     int level = log2f(bvhSize);
     int best = level;
-    int idx = (bvhSize + triIdx) / 2;
+    // we know that a bvh of size bvhSize has half its nodes just for the last level (one node per triangle bounds)
+    // => index of first triangle's bvh node = bvhSize / 2
+    int idx = bvhSize/2 + triIdx;
 
     bestIdx = -1;
     while (idx > 0) {
@@ -265,6 +311,9 @@ float computeNodeImportance(const aabb &triBounds, int triIdx, const aabb* bvh, 
         level--;
         idx >>= 1;
     }
+
+    if (bestIdx == -1)
+        std::cerr << " triangle " << triIdx << " doesn't have a best node" << std::endl;
 
     return powf(2, -best);
 }
@@ -289,7 +338,7 @@ float sumf(const float* priority, int size) {
 int sumi(const float* priority, float D, int size) {
     int s = 0;
     for (int t = 0; t < size; t++)
-        s += D * priority[t];
+        s += floor(D * priority[t]);
     return s;
 }
 
@@ -330,7 +379,7 @@ int computeNumSplits(btriangle* tris, int size, const aabb* bvh, int bvhSize, in
     // compute num splits for each triangle
     int numSplits = 0;
     for (int t = 0; t < size; t++) {
-        tris[t].s = D * priority[t];
+        tris[t].s = floor(D * priority[t]);
         numSplits += tris[t].s;
     }
 
@@ -339,7 +388,75 @@ int computeNumSplits(btriangle* tris, int size, const aabb* bvh, int bvhSize, in
     return numSplits;
 }
 
-aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles) {
+bool nodeSplitIntersects(const aabb& node, const aabb& bounds) {
+    int dim = node.split_axis();
+    float pos = node.centroid()[dim];
+    return bounds._min[dim] < pos && bounds._max[dim] > pos;
+}
+
+aabb findBestNode(const aabb& node, const aabb& bounds) {
+    aabb cur = node;
+    while (!nodeSplitIntersects(cur, bounds)) {
+        aabb left = cur.leftSplit();
+        if (left.contains(bounds))
+            cur = left;
+        else
+            cur = cur.rightSplit();
+    }
+    return cur;
+}
+
+float clamp(float v, float vmin, float vmax) {
+    return fminf(vmax, fmaxf(vmin, v));
+    //return min(vmax, max(vmin, v));
+}
+
+void split(const btriangle& tri, const aabb& bestNode, aabb& left, aabb& right) {
+    int dim = bestNode.split_axis();
+    float pos = bestNode.centroid()[dim];
+
+    vec3 v1 = tri.v[2];
+    for (int i = 0; i < 3; i++) {
+        vec3 v0 = v1;
+        v1 = tri.v[i]; 
+        float v1p = v1[dim];
+        float v0p = v0[dim];
+
+        if (v0p <= pos) left.grow(v0);
+        if (v0p >= pos) right.grow(v0);
+        // check if edge intersects the plane and store it in both sides
+        if ((v0p < pos && v1p > pos) || (v0p > pos && v1p < pos)) {
+            vec3 t = lerp(v0, v1, clamp((pos - v0p) / (v1p - v0p), 0.0f, 1.0f));
+            left.grow(t);
+            right.grow(t);
+        }
+    }
+    // intersect original bounds in case tri is a split already
+    left._max[dim] = pos;
+    right._min[dim] = pos;
+    left.intersect(tri.bounds);
+    right.intersect(tri.bounds);
+
+    // validate that left and right bounds are inside triangle bounds and their union produces triangle bounds
+    if (!tri.bounds.contains(left))
+        std::cerr << "tri.bounds !contains left" << std::endl;
+    if (!tri.bounds.contains(right))
+        std::cerr << "tri.bounds !contains right" << std::endl;
+    aabb bounds(left);
+    bounds.grow(right);
+    if (tri.bounds._min != bounds._min || tri.bounds._max != bounds._max)
+        std::cerr << "tri.bounds != union(left, right)" << std::endl;
+}
+
+void updateSplitCount(int s, const aabb& left, const aabb& right, int &sleft, int &sright) {
+    float wa = left.size()[left.split_axis()];
+    float wb = right.size()[right.split_axis()];
+
+    sleft = floor((s - 1) * wa / (wa + wb) + 0.5f);
+    sright = s - 1 - sleft;
+}
+
+aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles, btriangle** tris, int &numTrisWithSplits) {
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
     const int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
@@ -358,15 +475,58 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     }
     // start splitting the triangles
     std::cerr << "start splitting triangles. We will add " << (pow2NumLeaves - numLeaves) << " extra splits" << std::endl;
+    // compute for each triangle its num splits and most important node idx
+    int numSplits = computeNumSplits(l, numLeaves, bvh, bvhSize, pow2NumLeaves - numLeaves);
+    std::cerr << "adding an additional " << numSplits << " splits" << std::endl;
     // allocate enough triangles to store all triangles including the splits
-    btriangle* l2 = new btriangle[pow2NumLeaves];
+    int total = numLeaves + numSplits;
+    btriangle* l2 = new btriangle[total];
     for (int i = 0; i < numLeaves; i++) {
         l2[i] = l[i];
     }
-    // compute for each triangle its num splits and most important node idx
-    int numSplits = computeNumSplits(l2, numLeaves, bvh, bvhSize, pow2NumLeaves - numLeaves);
-    std::cerr << "adding an additional " << numSplits << " splits" << std::endl;
 
+    // actually split all triangles according to their numSplit (.s)
+    int nextSplit = numLeaves;
+    for (int i = 0; i < total; i++) {
+        btriangle& tri = l2[i];
+        // keep splitting this triangle until we run out of splits
+        while (tri.s > 0) {
+            //std::cerr << "splitting triangle " << i << " with " << tri.s << " splits" << std::endl;
+            // find most important node that splits this triangle, starting from its bestIdx
+            aabb node = findBestNode(bvh[tri.bestIdx], tri.bounds);
+            aabb left, right;
+            split(tri, node, left, right);
+            // replace current triangle with left split
+            tri.bounds = left;
+            // add new split to the end of the array
+            btriangle split(tri, right);
+            // update split count for left and right splits
+            int sleft, sright;
+            updateSplitCount(tri.s, left, right, sleft, sright);
+            tri.s = sleft;
+            split.s = sright;
+            // store new split at end of array
+            l2[nextSplit++] = split;
+
+            if (left.size()[left.split_axis()] < 0.00001f)
+                std::cerr << " left bound empty" << std::endl;
+            if (right.size()[right.split_axis()] < 0.00001f)
+                std::cerr << " right bound empty" << std::endl;
+        }
+    }
+
+    if (nextSplit != total) std::cerr << "nextSplit < total : " << nextSplit << " < " << total << std::endl;
+
+    // now rebuild the bvh using all triangles including the splits
+    std::cerr << "rebuilding bvh with splits" << std::endl;
+    numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, total, 1);
+    std::cerr << "num internal nodes = " << numNodes << std::endl;
+
+    *tris = l2;
+    numTrisWithSplits = total;
+
+    //* tris = l2;
+    //numTrisWithSplits = numLeaves;
     return bvh;
 }
 
@@ -531,7 +691,13 @@ scene initScene(const std::vector<btriangle> &tris, float scale, bool centerAndS
 #ifdef SAH_BVH
     build_sah_bvh(sc.tris, size);
 #else
-    sc.bvh = build_bvh(sc.tris, size, sc.bvh_size, splitTriangles);
+    btriangle* trisWithSplits;
+    int numTrisWithSplits;
+    sc.bvh = build_bvh(sc.tris, size, sc.bvh_size, splitTriangles, &trisWithSplits, numTrisWithSplits);
+    // replace tris with trisWithSplits
+    delete[] sc.tris;
+    sc.tris = trisWithSplits;
+    sc.numTris = numTrisWithSplits;
 #endif // SAH_BVH
 
     return sc;
