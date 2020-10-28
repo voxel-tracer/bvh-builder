@@ -155,7 +155,7 @@ __host__ __device__ inline bool isnan(const vec3& v) {
     return isnan(v.x()) || isnan(v.y()) || isnan(v.z());
 }
 
-__host__ __device__ inline vec3 lerp(const vec3& v0, const vec3& v1, int t) {
+__host__ __device__ inline vec3 lerp(const vec3& v0, const vec3& v1, float t) {
     return (1.0f - t) * v0 + t * v1;
 }
 

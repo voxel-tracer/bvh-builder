@@ -408,7 +408,6 @@ aabb findBestNode(const aabb& node, const aabb& bounds) {
 
 float clamp(float v, float vmin, float vmax) {
     return fminf(vmax, fmaxf(vmin, v));
-    //return min(vmax, max(vmin, v));
 }
 
 void split(const btriangle& tri, const aabb& bestNode, aabb& left, aabb& right) {
@@ -487,10 +486,17 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
 
     // actually split all triangles according to their numSplit (.s)
     int nextSplit = numLeaves;
-    for (int i = 0; i < total; i++) {
+    //int skipSplits = 0;
+    //int leftToSplit = numSplits;
+    //bool doneSplitting = false;
+    for (int i = 0; /*!doneSplitting &&*/ i < total; i++) {
         btriangle& tri = l2[i];
         // keep splitting this triangle until we run out of splits
-        while (tri.s > 0) {
+        while (/*!doneSplitting &&*/ tri.s > 0) {
+            //if (--skipSplits > 0) {
+            //    tri.s = 0;
+            //    continue;
+            //}
             //std::cerr << "splitting triangle " << i << " with " << tri.s << " splits" << std::endl;
             // find most important node that splits this triangle, starting from its bestIdx
             aabb node = findBestNode(bvh[tri.bestIdx], tri.bounds);
@@ -512,18 +518,21 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
                 std::cerr << " left bound empty" << std::endl;
             if (right.size()[right.split_axis()] < 0.00001f)
                 std::cerr << " right bound empty" << std::endl;
+
+            //if (--leftToSplit == 0)
+            //    doneSplitting = true;
         }
     }
 
-    if (nextSplit != total) std::cerr << "nextSplit < total : " << nextSplit << " < " << total << std::endl;
+    //if (nextSplit != total) std::cerr << "nextSplit < total : " << nextSplit << " < " << total << std::endl;
 
     // now rebuild the bvh using all triangles including the splits
     std::cerr << "rebuilding bvh with splits" << std::endl;
-    numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, total, 1);
+    numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, nextSplit, 1);
     std::cerr << "num internal nodes = " << numNodes << std::endl;
 
     *tris = l2;
-    numTrisWithSplits = total;
+    numTrisWithSplits = nextSplit;
 
     //* tris = l2;
     //numTrisWithSplits = numLeaves;
