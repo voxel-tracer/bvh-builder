@@ -465,10 +465,10 @@ void updateSplitCount(int s, const aabb& left, const aabb& right, int &sleft, in
     sright = s - 1 - sleft;
 }
 
-aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles, btriangle** tris, int &numTrisWithSplits) {
+aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles, float Sexcess, btriangle** tris, int &numTrisWithSplits) {
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
-    const int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
+    int pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(numLeaves)));
     std::cout << "pow2NumLeaves: " << pow2NumLeaves << std::endl;
     // total number of nodes in the tree
     bvhSize = pow2NumLeaves * 2;
@@ -483,9 +483,10 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
         return bvh; // do not split
     }
     // start splitting the triangles
-    std::cerr << "start splitting triangles. We will add " << (pow2NumLeaves - numLeaves) << " extra splits" << std::endl;
+    int Sbudget = Sexcess <= 0 ? (pow2NumLeaves - numLeaves) : floor(numLeaves * Sexcess);
+    std::cerr << "start splitting triangles. We will add at most " << Sbudget << " extra splits" << std::endl;
     // compute for each triangle its num splits and most important node idx
-    int numSplits = computeNumSplits(l, numLeaves, bvh, bvhSize, pow2NumLeaves - numLeaves);
+    int numSplits = computeNumSplits(l, numLeaves, bvh, bvhSize, Sbudget);
     std::cerr << "adding an additional " << numSplits << " splits" << std::endl;
     // allocate enough triangles to store all triangles including the splits
     int total = numLeaves + numSplits;
@@ -539,11 +540,24 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     }
 
     //if (nextSplit != total) std::cerr << "nextSplit < total : " << nextSplit << " < " << total << std::endl;
+    delete[] bvh;
 
     // now rebuild the bvh using all triangles including the splits
-    std::cerr << "rebuilding bvh with splits" << std::endl;
-    numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, nextSplit, 1);
+
+    // number of leaves that is a power of 2, this is the max width of a complete binary tree
+    pow2NumLeaves = (int)powf(2.0f, ceilf(log2f(total)));
+    std::cout << "pow2NumLeaves: " << pow2NumLeaves << std::endl;
+    // total number of nodes in the tree
+    bvhSize = pow2NumLeaves * 2;
+    std::cout << "bvh_size: " << bvhSize << std::endl;
+    // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
+    bvh = new aabb[bvhSize];
+    numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, total, 1);
     std::cerr << "num internal nodes = " << numNodes << std::endl;
+
+    //std::cerr << "rebuilding bvh with splits" << std::endl;
+    //numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, nextSplit, 1);
+    //std::cerr << "num internal nodes = " << numNodes << std::endl;
 
     *tris = l2;
     numTrisWithSplits = nextSplit;
@@ -658,7 +672,10 @@ void build_sah_bvh(triangle *tris, int n) {
 #endif
 
 // center scene around origin
-scene initScene(const std::vector<btriangle> &tris, float scale, bool centerAndScale, bool splitTriangles) {
+// if splitTriangles is set and Sexcess = 0, we will only split enough triangles to keep the number of levels in the BVH the same (basically increase
+// number of triangles to the next power of 2)
+// if Sexcess > 0 it will be a ratio of the number of triangles and will be used as the splitting budget
+scene initScene(const std::vector<btriangle> &tris, float scale, bool centerAndScale, bool splitTriangles, float Sexcess) {
     scene sc;
 
     int size = tris.size();
@@ -716,7 +733,7 @@ scene initScene(const std::vector<btriangle> &tris, float scale, bool centerAndS
 #else
     btriangle* trisWithSplits;
     int numTrisWithSplits;
-    sc.bvh = build_bvh(sc.tris, size, sc.bvh_size, splitTriangles, &trisWithSplits, numTrisWithSplits);
+    sc.bvh = build_bvh(sc.tris, size, sc.bvh_size, splitTriangles, Sexcess, &trisWithSplits, numTrisWithSplits);
     // replace tris with trisWithSplits
     delete[] sc.tris;
     sc.tris = trisWithSplits;
@@ -812,10 +829,15 @@ void save(const std::string output, const scene& sc, int numPrimitivesPerLeaf) {
     delete[] tris;
 }
 
-int main() {
+int main(int argc, char** argv) {
     float scale = 100.0f;
     mat3x3 mat = yUp;
     bool splitTriangles = true;
+
+    int Sexcess = 0;
+    if (argc > 1) {
+        Sexcess = strtol(argv[1], NULL, 10);
+    }
 
     //TODO include scale in the transformation mat, so we can scale models separately
     std::string basePath = "C:\\Users\\adene\\models\\glsl-assets\\staircase\\";
@@ -849,7 +871,7 @@ int main() {
         return -1;
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
-    scene s = initScene(tris, scale, false, splitTriangles); // passing scale=0 disables scaling the model
+    scene s = initScene(tris, scale, false, splitTriangles, Sexcess / 100.0f); // passing scale=0 disables scaling the model
 
 #ifndef SAH_BVH
     //save("D:\\models\\obj\\cube.bvh", s, numPrimitivesPerLeaf);
