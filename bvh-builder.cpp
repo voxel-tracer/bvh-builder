@@ -62,8 +62,18 @@ struct aabb {
     }
 
     void intersect(const aabb& node) {
+        // _min must be in [node._min, node._max]
         _min = max(_min, node._min);
+        _min = min(_min, node._max);
+        // _max must be in [node._min, node._max]
+        _max = max(_max, node._min);
         _max = min(_max, node._max);
+    }
+
+    bool validate() {
+        for (int a = 0; a < 3; a++)
+            if (_min[a] > _max[a]) return false;
+        return true;
     }
 
     vec3 centroid() const {
@@ -506,6 +516,10 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
             tri.bounds = left;
             // add new split to the end of the array
             btriangle split(tri, right);
+            if (!left.validate())
+                std::cerr << "left split invalid" << std::endl;
+            if (!right.validate())
+                std::cerr << "right split invalid" << std::endl;
             // update split count for left and right splits
             int sleft, sright;
             updateSplitCount(tri.s, left, right, sleft, sright);
