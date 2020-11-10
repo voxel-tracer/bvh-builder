@@ -475,7 +475,10 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     std::cout << "bvh_size: " << bvhSize << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
     aabb* bvh = new aabb[bvhSize];
+
+    clock_t start = clock();
     uint64_t numNodes = build_bvh(bvh, 1, l, pow2NumLeaves, numLeaves, 1);
+    std::cerr << "took " << (((double)(clock() - start)) / CLOCKS_PER_SEC) << " seconds.\n";
     std::cerr << "num internal nodes = " << numNodes << std::endl;
 
     // should we split ? and can we actually split ?
@@ -552,7 +555,9 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     std::cout << "bvh_size: " << bvhSize << std::endl;
     // allocate enough nodes to hold the whole tree, even if some of the nodes will remain unused
     bvh = new aabb[bvhSize];
+    start = clock();
     numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, total, 1);
+    std::cerr << "took " << (((double)(clock() - start)) / CLOCKS_PER_SEC) << " seconds.\n";
     std::cerr << "num internal nodes = " << numNodes << std::endl;
 
     //std::cerr << "rebuilding bvh with splits" << std::endl;
