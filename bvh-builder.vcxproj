@@ -140,8 +140,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="bvh-builder.cpp" />
+    <ClCompile Include="bvh.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="geometry.h" />
+    <ClInclude Include="bvh.h" />
     <ClInclude Include="tiny_obj_loader.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>

@@ -18,12 +18,21 @@
     <ClCompile Include="bvh-builder.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="bvh.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="vec3.h">
       <Filter>Header Files</Filter>
     </ClInclude>
     <ClInclude Include="tiny_obj_loader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="bvh.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="geometry.h">
       <Filter>Header Files</Filter>
     </ClInclude>
   </ItemGroup>
