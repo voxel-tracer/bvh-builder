@@ -1,4 +1,7 @@
 #include "bvh.h"
+
+#define __host__
+#define __device__
 #include "geometry.h"
 
 #include <algorithm>
@@ -35,59 +38,34 @@ struct BVHBuildNode {
     uint32_t splitAxis, firstPrimOffset, nPrimitives;
 };
 
-struct LinearBVHNode {
-    Bounds3 bounds;
-    union {
-        int primitivesOffset;   // leaf
-        int secondChildOffset;  // interior
-    };
-    uint16_t nPrimitives;   // 0 -> interior node
-    uint8_t axis;           // interior node: xyz
-    uint8_t pad[1];         // ensure 32 bytes total size
-};
-
-// file structs compatible with my current renderer, may remove this in the future
-struct FileTriangle {
-    FileTriangle() {}
-    FileTriangle(const Triangle& t) {
-        v[0] = t.v[0];
-        v[1] = t.v[1];
-        v[2] = t.v[2];
-        meshID = t.meshID;
-        for (auto i = 0; i < 6; i++)
-            texCoords[i] = t.texCoords[i];
-    }
-
-    vec3 v[3];
-    float texCoords[6];
-    unsigned char meshID;
-};
-
-BVHAccel::BVHAccel(const std::string out, const std::vector<std::shared_ptr<Triangle>>& p, int maxPrimsInNode, SplitMethod splitMethod)
+BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrimsInNode, SplitMethod splitMethod)
     : maxPrimsInNode(maxPrimsInNode), splitMethod(splitMethod), primitives(p) {
-    if (primitives.size() == 0)
-        return;
+    if (primitives.empty()) return;
     // Build BVH from primitives
+
     // Initialize primitiveInfo array from primitives
     std::vector<BVHPrimitiveInfo> primitiveInfo(primitives.size());
     for (size_t i = 0; i < primitives.size(); ++i)
         primitiveInfo[i] = { i, primitives[i]->bounds };
+
     // Build BVH tree for primitives using PrimitiveInfo
     int totalNodes = 0;
     std::vector<std::shared_ptr<Triangle>> orderedPrims;
+    orderedPrims.reserve(primitives.size());
     BVHBuildNode* root;
     // we only support SplitMethod::EqualCounts
     root = recursiveBuild(primitiveInfo, 0, primitives.size(), &totalNodes, orderedPrims);
     primitives.swap(orderedPrims);
+    primitiveInfo.resize(0);
+    std::cerr << "BVH created with " << totalNodes << " nodes for " << (int)primitives.size() << std::endl;
+
     // Compute representation of depth-first traversal of BVH tree
-    // node at index idx has its children stored in idx*2, idx*2+1. This allows the traversal to deduce indices without explicitely storing them
-    totalNodes = maxOffset(root, 1);
-    nodes = new LinearBVHNode[totalNodes];
-    flattenBVHTree(root, 1);
-    save(out, totalNodes);
+    nodes.resize(totalNodes);
+    int offset = 0;
+    flattenBVHTree(root, &offset);
 }
 
-BVHAccel::~BVHAccel() { delete[] nodes; }
+BVHAccel::~BVHAccel() { }
 
 BVHBuildNode* BVHAccel::recursiveBuild(
     std::vector<BVHPrimitiveInfo>& primitiveInfo,
@@ -141,19 +119,10 @@ BVHBuildNode* BVHAccel::recursiveBuild(
     return node;
 }
 
-int BVHAccel::maxOffset(BVHBuildNode* node, int offset) {
-    if (node->nPrimitives > 0) {
-        return offset; // Leaf node
-    } else {
-        return std::max(
-            maxOffset(node->children[0], offset * 2),
-            maxOffset(node->children[1], offset * 2 + 1));
-    }
-}
-
-void BVHAccel::flattenBVHTree(BVHBuildNode* node, int offset) {
-    LinearBVHNode* linearNode = &nodes[offset];
+int BVHAccel::flattenBVHTree(BVHBuildNode* node, int* offset) {
+    LinearBVHNode* linearNode = &nodes[*offset];
     linearNode->bounds = node->bounds;
+    int myOffset = (*offset)++;
     if (node->nPrimitives > 0) {
         linearNode->primitivesOffset = node->firstPrimOffset;
         linearNode->nPrimitives = node->nPrimitives;
@@ -161,34 +130,9 @@ void BVHAccel::flattenBVHTree(BVHBuildNode* node, int offset) {
         // Create interior flattened BVH node
         linearNode->axis = node->splitAxis;
         linearNode->nPrimitives = 0;
-        flattenBVHTree(node->children[0], offset*2);
-        flattenBVHTree(node->children[1], offset * 2 + 1);
+        flattenBVHTree(node->children[0], offset);
+        linearNode->secondChildOffset = 
+            flattenBVHTree(node->children[1], offset);
     }
-}
-
-// 0.05 LinearBVHNode instead of Bounds3
-void BVHAccel::save(std::string output, int totalNodes) {
-    std::fstream out(output, std::ios::out | std::ios::binary);
-    // start with header
-    const char* HEADER = "BVH_00.05";
-    out.write(HEADER, strlen(HEADER) + 1);
-
-    // convert Triangle to triangle and write them to disk
-    int numPrimitives = primitives.size();
-    FileTriangle* tris = new FileTriangle[numPrimitives];
-    for (int i = 0; i < numPrimitives; i++)
-        tris[i] = FileTriangle(*(primitives[i]));
-    out.write((char*)&numPrimitives, sizeof(int));
-    out.write((char*)tris, sizeof(FileTriangle) * numPrimitives);
-    delete[] tris;
-
-    // save linear nodes
-    out.write((char*)&totalNodes, sizeof(int));
-    out.write((char*)nodes, sizeof(LinearBVHNode) * totalNodes);
-    // write scene bounds
-    out.write((char*)&nodes[1].bounds.pMin, sizeof(vec3));
-    out.write((char*)&nodes[1].bounds.pMax, sizeof(vec3));
-    out.write((char*)&maxPrimsInNode, sizeof(int));
-    out.close();
-
+    return myOffset;
 }

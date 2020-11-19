@@ -7,9 +7,13 @@
 #define TINYOBJLOADER_IMPLEMENTATION 
 #include "tiny_obj_loader.h"
 
-#include "bvh.h"
 #define GEOMETRY_IMPLEMENTATION
+#define __host__
+#define __device__
 #include "geometry.h"
+
+#include "bvh.h"
+#include "bvh_io.h"
 
 
 bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triangle>> &tris, unsigned char meshID) {
@@ -106,6 +110,7 @@ int main(int argc, char** argv) {
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
     time_t start = clock();
-    BVHAccel accel("C:\\Users\\adene\\models\\BVH\\staircase.bvh", tris);
+    BVHAccel accel(tris);
     std::cerr << "BVH build took " << ((float)(clock() - start)) / CLOCKS_PER_SEC << " seconds" << std::endl;
+    saveBVH("C:\\Users\\adene\\models\\BVH\\staircase.bvh", accel.primitives, accel.nodes, 1);
 }

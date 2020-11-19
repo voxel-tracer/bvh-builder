@@ -1,8 +1,8 @@
 #pragma once
 
 // following are needed to properly compile vec3.h
-#define __host__
-#define __device__
+//#define __host__
+//#define __device__
 #include "vec3.h"
 
 struct Bounds3 {
@@ -82,4 +82,33 @@ struct Triangle {
         bounds = Union(bounds, v1);
         bounds = Union(bounds, v2);
     }
+};
+
+// file structs compatible with my current renderer, may remove this in the future
+struct LinearTriangle {
+    LinearTriangle() {}
+    LinearTriangle(const Triangle& t) {
+        v[0] = t.v[0];
+        v[1] = t.v[1];
+        v[2] = t.v[2];
+        meshID = t.meshID;
+        for (auto i = 0; i < 6; i++)
+            texCoords[i] = t.texCoords[i];
+    }
+
+    vec3 v[3];
+    float texCoords[6];
+    unsigned char meshID;
+};
+
+// this is duplicated with bvh.cpp, but it's fine for now
+struct LinearBVHNode {
+    Bounds3 bounds;
+    union {
+        int primitivesOffset;   // leaf
+        int secondChildOffset;  // interior
+    };
+    uint16_t nPrimitives;   // 0 -> interior node
+    uint8_t axis;           // interior node: xyz
+    uint8_t pad[1];         // ensure 32 bytes total size
 };
