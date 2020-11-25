@@ -61,8 +61,8 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrims
 
     // Compute representation of depth-first traversal of BVH tree
     nodes.resize(totalNodes);
-    int offset = 0;
-    flattenBVHTree(root, &offset);
+    int offset = 1;
+    flattenBVHTree(root, 0, &offset);
 }
 
 BVHAccel::~BVHAccel() { }
@@ -119,20 +119,22 @@ BVHBuildNode* BVHAccel::recursiveBuild(
     return node;
 }
 
-int BVHAccel::flattenBVHTree(BVHBuildNode* node, int* offset) {
-    LinearBVHNode* linearNode = &nodes[*offset];
+void BVHAccel::flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOffset) {
+    // store node at offset
+    // and its children, if any, at firstChildOffset and firstChildOffset+1
+    LinearBVHNode* linearNode = &nodes[offset];
     linearNode->bounds = node->bounds;
-    int myOffset = (*offset)++;
     if (node->nPrimitives > 0) {
         linearNode->primitivesOffset = node->firstPrimOffset;
         linearNode->nPrimitives = node->nPrimitives;
-    } else {
+    }
+    else {
         // Create interior flattened BVH node
         linearNode->axis = node->splitAxis;
         linearNode->nPrimitives = 0;
-        flattenBVHTree(node->children[0], offset);
-        linearNode->secondChildOffset = 
-            flattenBVHTree(node->children[1], offset);
+        linearNode->firstChildOffset = (*firstChildOffset);
+        (*firstChildOffset) += 2; // reserve space for both children
+        flattenBVHTree(node->children[0], linearNode->firstChildOffset, firstChildOffset);
+        flattenBVHTree(node->children[1], linearNode->firstChildOffset+1, firstChildOffset);
     }
-    return myOffset;
 }

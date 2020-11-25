@@ -29,7 +29,8 @@ private:
         std::vector<BVHPrimitiveInfo>& primitiveInfo, 
         int start, int end, int* totalNodes, 
         std::vector<std::shared_ptr<Triangle>>& orderedPrims);
-    int flattenBVHTree(BVHBuildNode* node, int* offset);
+
+    void flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOffset);
 
     // BVHAccel Private Data
     const int maxPrimsInNode;

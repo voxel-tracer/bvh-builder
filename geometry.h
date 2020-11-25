@@ -106,7 +106,7 @@ struct LinearBVHNode {
     Bounds3 bounds;
     union {
         int primitivesOffset;   // leaf
-        int secondChildOffset;  // interior
+        int firstChildOffset;  // interior
     };
     uint16_t nPrimitives;   // 0 -> interior node
     uint8_t axis;           // interior node: xyz

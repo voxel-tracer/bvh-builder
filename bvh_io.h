@@ -7,7 +7,7 @@
 #include "geometry.h"
 
 // 0.05 LinearBVHNode instead of Bounds3, no scene Bounds3
-
+// 0.06 children nodes are stored in successive offsets
 
 void saveBVH(std::string output, 
              std::vector<std::shared_ptr<Triangle>> &primitives,
@@ -15,7 +15,7 @@ void saveBVH(std::string output,
              int maxPrimsInNode) {
     std::fstream out(output, std::ios::out | std::ios::binary);
     // start with header
-    const char* HEADER = "BVH_00.05";
+    const char* HEADER = "BVH_00.06";
     out.write(HEADER, strlen(HEADER) + 1);
 
     // convert Triangle to triangle and write them to disk
@@ -47,7 +47,7 @@ bool loadBVH(std::string input,
              int *maxPrimsInNode) {
     std::fstream in(input, std::ios::in | std::ios::binary);
 
-    const char* HEADER = "BVH_00.05";
+    const char* HEADER = "BVH_00.06";
     int headerLen = strlen(HEADER) + 1;
     char* header = new char[headerLen];
     in.read(header, headerLen);
