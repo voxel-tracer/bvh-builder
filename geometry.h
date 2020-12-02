@@ -103,6 +103,8 @@ struct LinearTriangle {
 
 // this is duplicated with bvh.cpp, but it's fine for now
 struct LinearBVHNode {
+    __host__ __device__ LinearBVHNode() {}
+
     Bounds3 bounds;
     union {
         int primitivesOffset;   // leaf
