@@ -45,13 +45,12 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
         std::cerr << " normals size " << attrib.normals.size() << std::endl;
 
     // loop over shapes and copy all triangles to vertices vector
-    uint32_t triIdx = 0;
     vec3 verts[3];
     float tc[6];
     for (auto s = 0; s < shapes.size(); s++) {
         // loop over faces
         size_t index_offset = 0;
-        for (auto f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++, triIdx++) {
+        for (auto f = 0; f < shapes[s].mesh.num_face_vertices.size(); f++) {
             int fv = shapes[s].mesh.num_face_vertices[f];
             if (fv != 3)
                 std::cerr << "face " << f << " of shape " << s << " has " << fv << " vertices" << std::endl;
@@ -70,7 +69,7 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
                 tc[v * 2 + 0] = tx;
                 tc[v * 2 + 1] = ty;
             }
-            tris.push_back(std::make_shared<Triangle>(verts[0], verts[1], verts[2], tc, meshID));
+            tris.push_back(std::make_shared<Triangle>(tris.size(), verts[0], verts[1], verts[2], tc, meshID));
             index_offset += 3;
         }
     }

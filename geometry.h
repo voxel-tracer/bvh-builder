@@ -18,6 +18,8 @@ struct Bounds3 {
 
     vec3 Diagonal() const { return pMax - pMin; }
 
+    vec3 Center() const { return (pMax + pMin) / 2; }
+
     int MaximumExtent() const {
         vec3 d = Diagonal();
         if (d.x() > d.y() && d.x() > d.z())
@@ -26,6 +28,53 @@ struct Bounds3 {
             return 1;
         else
             return 2;
+    }
+
+    float SurfaceArea() const {
+        vec3 d = Diagonal();
+        return 2 * (d.x() * d.y() + d.x() * d.z() + d.y() * d.z());
+    }
+
+    bool MedianSplits(Bounds3 bounds) const {
+        int dim = MaximumExtent();
+        float pos = Center()[dim];
+        return bounds.pMin[dim] < pos && bounds.pMax[dim] > pos;
+    }
+
+    Bounds3 leftSplit() const {
+        int dim = MaximumExtent();
+        float pos = Center()[dim];
+
+        Bounds3 left = *this;
+        left.pMax[dim] = pos;
+
+        return left;
+    }
+
+    Bounds3 rightSplit() const {
+        int dim = MaximumExtent();
+        float pos = Center()[dim];
+
+        Bounds3 right = *this;
+        right.pMin[dim] = pos;
+
+        return right;
+    }
+
+    bool Contains(Bounds3 node) const {
+        //for (int a = 0; a < 3; a++) {
+        //    if (node.pMax[a] < pMin[a] || node.pMin[a] > pMax[a])
+        //        return false;
+        //}
+        //return true;
+        return node.pMin.x() >= pMin.x() && node.pMin.y() >= pMin.y() && node.pMin.z() >= pMin.z() &&
+            node.pMax.x() <= pMax.x() && node.pMax.y() <= pMax.y() && node.pMax.z() <= pMax.z();
+    }
+
+    bool IsValid() const {
+        for (int a = 0; a < 3; a++)
+            if (pMin[a] > pMax[a]) return false;
+        return true;
     }
 };
 
@@ -44,14 +93,32 @@ Bounds3 Union(const Bounds3& b, const vec3& p) {
     ret.pMax = max(b.pMax, p);
     return ret;
 }
+
+Bounds3 Intersect(const Bounds3& b1, const Bounds3& b2) {
+    Bounds3 ret = b1;
+    // _min must be in [node._min, node._max]
+    ret.pMin = max(ret.pMin, b2.pMin);
+    ret.pMin = min(ret.pMin, b2.pMax);
+    // _max must be in [node._min, node._max]
+    ret.pMax = max(ret.pMax, b2.pMin);
+    ret.pMax = min(ret.pMax, b2.pMax);
+    return ret;
+}
+
+bool operator!=(const Bounds3& b1, const Bounds3& b2) {
+    return b1.pMin != b2.pMin || b1.pMax != b2.pMax;
+}
 #else
 
 Bounds3 Union(const Bounds3& b1, const Bounds3& b2);
 Bounds3 Union(const Bounds3& b, const vec3& p);
+Bounds3 Intersect(const Bounds3& b1, const Bounds3& b2);
+bool operator!=(const Bounds3& b1, const Bounds3& b2);
 
 #endif // GEOMETRY_IMPLEMENTATION
 
 struct Triangle {
+    int id;
     vec3 v[3];
     float texCoords[6];
     unsigned char meshID;
@@ -69,7 +136,7 @@ struct Triangle {
         for (auto i = 0; i < 6; i++)
             texCoords[i] = tri.texCoords[i];
     }
-    Triangle(vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID) {
+    Triangle(int id, vec3 v0, vec3 v1, vec3 v2, float tc[6], unsigned char mID): id(id) {
         v[0] = v0;
         v[1] = v1;
         v[2] = v2;
