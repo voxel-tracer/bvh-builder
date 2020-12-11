@@ -141,12 +141,14 @@
   <ItemGroup>
     <ClCompile Include="bvh-builder.cpp" />
     <ClCompile Include="bvh.cpp" />
+    <ClCompile Include="trisplit.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="bvh_io.h" />
     <ClInclude Include="geometry.h" />
     <ClInclude Include="bvh.h" />
     <ClInclude Include="tiny_obj_loader.h" />
+    <ClInclude Include="trisplit.h" />
     <ClInclude Include="vec3.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
