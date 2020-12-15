@@ -8,36 +8,70 @@ struct TriSplitInfo {
     int s;
 };
 
-float computeNodeImportance(std::shared_ptr<Triangle> tri, const std::vector<LinearBVHNode>& nodes, TriSplitInfo* info, int triIdx) {
-    // go down the BVH tree and stop at first node that the triangle intersects its median
-    int idx = 0;
-    int level = 1;
-    while (true) {
-        LinearBVHNode node = nodes[idx];
-        if (node.nPrimitives > 0)
-            break; // we reached the triangle's leaf node, we can't go further
-        if (node.bounds.MedianSplits(tri->bounds))
-            break; // we found a node that splits the triangle
+struct SplittingNode {
+    int nodeIdx = -1;
+    int level;
+    int dim; // splitting dimension
+    float pos; // splitting position
+};
 
-        // go to left/right node depending on which side the triangle falls in
-        if (nodes[node.firstChildOffset].bounds.Contains(tri->bounds))
-            idx = node.firstChildOffset; // go left
-        else if (nodes[node.firstChildOffset + 1].bounds.Contains(tri->bounds))
-            idx = node.firstChildOffset + 1; // go right
-        else {
-            //LinearBVHNode left = nodes[node.firstChildOffset];
-            //LinearBVHNode right = nodes[node.firstChildOffset + 1];
-            //std::cerr << "ERROR bestNode doesn't contain triangle " << triIdx << "(" << tri->id << ")" << std::endl;
-            break;
+struct TriangleBounds {
+    int idx;
+    Bounds3 bounds;
+};
+
+bool findBestSplittingNode(const std::vector<LinearBVHNode>& nodes, int nodeIdx, int nodeLvl, const TriangleBounds &tri, SplittingNode *best) {
+    const LinearBVHNode *node = &nodes[nodeIdx];
+
+    if (!node->bounds.Contains(tri.bounds))
+        return false; // node cannot be an ancestor of triangle
+
+    bool found = false;
+    if (node->nPrimitives > 0) {
+        // TODO confirm that tri.idx is contained in [node->primitiveOffset, node->primitiveOffset + node->nPrimitives[
+        // even though the triangle is completely inside the leaf node, it may not be its parent node
+        if (tri.idx >= node->primitivesOffset && tri.idx < (node->primitivesOffset + node->nPrimitives)) {
+            // it is this triangle's BVH node
+            found = true;
+        } else {
+            return false;
         }
-        level++; // go down one level
+    } else {
+        // for internal nodes, check if the triangle is part of the subtree
+        found = findBestSplittingNode(nodes, node->firstChildOffset, nodeLvl + 1, tri, best) ||
+            findBestSplittingNode(nodes, node->firstChildOffset + 1, nodeLvl + 1, tri, best);
     }
 
-    info->bestNode = nodes[idx].bounds;
+    if (found && node->bounds.MedianSplits(tri.bounds)) {
+        // this node is the best splitting node so far (when going bottom up)
+        best->nodeIdx = nodeIdx;
+        best->level = nodeLvl;
+        best->dim = node->bounds.MaximumExtent();
+        best->pos = node->bounds.Center()[best->dim];
+    } else if (node->nPrimitives > 0) {
+        // this shouldn't happen, a leaf node should always split its triangle (unless it contains multiple triangles)
+        std::cerr << "non splitting leaf node found!" << std::endl;
+    }
+
+    return found;
+}
+
+float computeNodeImportance(std::shared_ptr<Triangle> tri, const std::vector<LinearBVHNode>& nodes, TriSplitInfo* info, int triIdx) {
+    SplittingNode best;
+    TriangleBounds bounds = { triIdx, tri->bounds };
+    bool found = findBestSplittingNode(nodes, 0, 1, bounds, &best);
+    // found should always be true
+    //if (!found) {
+    //    std::cerr << "ERROR couldn't find triangle " << triIdx << " (" << tri->id << ")" << std::endl;
+    //} else if (best.nodeIdx == -1) {
+    //    std::cerr << "ERROR couldn't find best splitting node for triangle " << triIdx << " (" << tri->id << ")" << std::endl;
+    //}
+
+    info->bestNode = nodes[best.nodeIdx].bounds;
     //if (!info->bestNode.Contains(tri->bounds))
     //    std::cerr << "ERROR bestNode doesn't contain its triangle" << std::endl;
 
-    return powf(2, -level);
+    return powf(2, -best.level);
 }
 
 float computeEmptySurfaceArea(std::shared_ptr<Triangle> tri) {
@@ -202,6 +236,9 @@ void split(const std::vector<std::shared_ptr<Triangle>>& primitives,
     // actually split all triangles according to their numSplit (.s)
     int nextSplit = primitives.size();
 
+    // copy all primitives to splitPrimitives
+    splitPrimitives.reserve(total);
+    std::copy(primitives.begin(), primitives.end(), std::back_inserter(splitPrimitives));
     splitPrimitives.resize(total);
     splitInfos.resize(total);
 
@@ -209,7 +246,7 @@ void split(const std::vector<std::shared_ptr<Triangle>>& primitives,
     //int leftToSplit = numSplits;
     //bool doneSplitting = false;
     for (int i = 0; /*!doneSplitting &&*/ i < total; i++) {
-        std::shared_ptr<Triangle> tri = primitives[i];
+        std::shared_ptr<Triangle> tri = splitPrimitives[i];
         TriSplitInfo& info = splitInfos[i];
         // keep splitting this triangle until we run out of splits
         while (/*!doneSplitting &&*/ info.s > 0) {

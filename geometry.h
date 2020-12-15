@@ -128,7 +128,7 @@ struct Triangle {
     int bestIdx; // most important node that this triangle intersects
 
     Triangle() {}
-    Triangle(const Triangle& tri, const Bounds3 bounds) : bounds(bounds) {
+    Triangle(const Triangle& tri, const Bounds3 bounds) : bounds(bounds), id(tri.id) {
         for (int i = 0; i < 3; i++)
             v[i] = tri.v[i];
         meshID = tri.meshID;
