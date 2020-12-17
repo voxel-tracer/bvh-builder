@@ -115,7 +115,27 @@ struct aabb {
         return node._min.x() >= _min.x() && node._min.y() >= _min.y() && node._min.z() >= _min.z() &&
             node._max.x() <= _max.x() && node._max.y() <= _max.y() && node._max.z() <= _max.z();
     }
+
+    vec3 Diagonal() const { return _max - _min; }
+
+    float SurfaceArea() const {
+        vec3 d = Diagonal();
+        return 2 * (d.x() * d.y() + d.x() * d.z() + d.y() * d.z());
+    }
 };
+
+
+aabb Intersect(const aabb& a, const aabb& b) {
+    aabb ret(a);
+    // _min must be in [node._min, node._max]
+    ret._min = max(ret._min, b._min);
+    ret._min = min(ret._min, b._max);
+    // _max must be in [node._min, node._max]
+    ret._max = max(ret._max, b._min);
+    ret._max = min(ret._max, b._max);
+    return ret;
+}
+
 
 struct btriangle {
     vec3 v[3];
@@ -465,6 +485,44 @@ void updateSplitCount(int s, const aabb& left, const aabb& right, int &sleft, in
     sright = s - 1 - sleft;
 }
 
+void computeQuality(const aabb* bvh, int size, int nodeIdx, std::vector<int> &bins, int *total, float binWidth) {
+    int firstLeaf = size / 2;
+
+    if (nodeIdx < firstLeaf) { // internal node
+        aabb node = bvh[nodeIdx];
+        aabb left = bvh[nodeIdx * 2];
+        aabb right = bvh[nodeIdx * 2 + 1];
+
+        // compute overlap of children nodes and the ratio of its surface area vs this node's surface area
+        if (left.validate() && right.validate()) {
+            float qa = Intersect(left, right).SurfaceArea() / node.SurfaceArea();
+            if (!std::isnan(qa)) {
+                int bin = min(floor(qa / binWidth), 9);
+                bins[bin]++;
+                (*total)++;
+            }
+        }
+        if (left.validate())
+            computeQuality(bvh, size, nodeIdx * 2, bins, total, binWidth);
+        if (right.validate())
+            computeQuality(bvh, size, nodeIdx * 2 + 1, bins, total, binWidth);
+    }
+}
+
+void printBVHQuality(const aabb* bvh, int size, int numBins) {
+    int total = 0;
+    float binWidth = 1.0f / numBins;
+    std::vector<int> bins(numBins);
+    computeQuality(bvh, size, 1, bins, &total, binWidth);
+    // compute and display histogram values
+    std::cerr << "BVH quality histogram:" << std::endl;
+    for (int b = 0; b < numBins; b++) {
+        float percent = bins[b] * 100.0f / total;
+        std::cerr << " [" << (b * binWidth) << ", " << ((b + 1) * binWidth) << "]\t = " << percent << std::endl;
+    }
+
+}
+
 aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTriangles, float Sexcess, btriangle** tris, int &numTrisWithSplits) {
     std::cout << "numLeaves: " << numLeaves << std::endl;
     // number of leaves that is a power of 2, this is the max width of a complete binary tree
@@ -482,6 +540,9 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     if (!splitTriangles || pow2NumLeaves == numLeaves) {
         return bvh; // do not split
     }
+
+    printBVHQuality(bvh, bvhSize, 10);
+
     // start splitting the triangles
     int Sbudget = Sexcess <= 0 ? (pow2NumLeaves - numLeaves) : floor(numLeaves * Sexcess);
     std::cerr << "start splitting triangles. We will add at most " << Sbudget << " extra splits" << std::endl;
@@ -554,6 +615,8 @@ aabb* build_bvh(btriangle* l, unsigned int numLeaves, int& bvhSize, bool splitTr
     bvh = new aabb[bvhSize];
     numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, total, 1);
     std::cerr << "num internal nodes = " << numNodes << std::endl;
+
+    printBVHQuality(bvh, bvhSize, 10);
 
     //std::cerr << "rebuilding bvh with splits" << std::endl;
     //numNodes = build_bvh(bvh, 1, l2, pow2NumLeaves, nextSplit, 1);
@@ -761,15 +824,15 @@ bool loadFromObj(const std::string& filepath, const mat3x3& mat, std::vector<btr
     if (!ret)
         return false;
 
-    std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
-    if (!materials.empty())
-        std::cerr << " materials size " << materials.size() << std::endl;
-    if (!attrib.texcoords.empty())
-        std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
-    if (!attrib.colors.empty())
-        std::cerr << " colors size " << attrib.colors.size() << std::endl;
-    if (!attrib.normals.empty())
-        std::cerr << " normals size " << attrib.normals.size() << std::endl;
+    //std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
+    //if (!materials.empty())
+    //    std::cerr << " materials size " << materials.size() << std::endl;
+    //if (!attrib.texcoords.empty())
+    //    std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
+    //if (!attrib.colors.empty())
+    //    std::cerr << " colors size " << attrib.colors.size() << std::endl;
+    //if (!attrib.normals.empty())
+    //    std::cerr << " normals size " << attrib.normals.size() << std::endl;
 
     // loop over shapes and copy all triangles to vertices vector
     uint32_t triIdx = 0;
