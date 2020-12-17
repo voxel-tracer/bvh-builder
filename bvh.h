@@ -31,6 +31,7 @@ private:
         std::vector<std::shared_ptr<Triangle>>& orderedPrims);
 
     void flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOffset);
+    void computeQuality(const BVHBuildNode* node, std::vector<int>& bins, int *total, float binWidth);
 
     // BVHAccel Private Data
     const int maxPrimsInNode;
