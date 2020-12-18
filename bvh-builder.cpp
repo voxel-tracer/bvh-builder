@@ -80,12 +80,12 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
     return true;
 }
 
-BVHAccel* split(BVHAccel* accel, float Sexcess) {
+BVHAccel* split(BVHAccel* accel, BVHAccel::SplitMethod splitMethod, float Sexcess) {
     std::vector<std::shared_ptr<Triangle>> splitPrimitives;
     split(accel->primitives, accel->nodes, Sexcess, splitPrimitives);
 
     delete accel;
-    return new BVHAccel(splitPrimitives);
+    return new BVHAccel(splitPrimitives, 1, splitMethod);
 }
 
 int main(int argc, char** argv) {
@@ -93,6 +93,7 @@ int main(int argc, char** argv) {
     std::vector<std::shared_ptr<Triangle>> tris;
     bool success = true;
     bool splitTriangles = true;
+    BVHAccel::SplitMethod splitMethod = BVHAccel::SplitMethod::SAH;
 
     int Sexcess = 0;
     if (argc > 1) {
@@ -125,13 +126,14 @@ int main(int argc, char** argv) {
         return -1;
     }
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
+
     time_t start = clock();
-    BVHAccel *accel = new BVHAccel(tris);
+    BVHAccel *accel = new BVHAccel(tris, 1, splitMethod);
     std::cerr << "BVH build took " << ((float)(clock() - start)) / CLOCKS_PER_SEC << " seconds" << std::endl;
 
     if (splitTriangles && Sexcess > 0) {
         start = clock();
-        accel = split(accel, Sexcess / 100.0f);
+        accel = split(accel, splitMethod, Sexcess / 100.0f);
         std::cerr << "Splitting and rebuilding the BVH took " << ((float)(clock() - start)) / CLOCKS_PER_SEC << " seconds" << std::endl;
     }
 

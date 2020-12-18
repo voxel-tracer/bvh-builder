@@ -76,6 +76,14 @@ struct Bounds3 {
             if (pMin[a] > pMax[a]) return false;
         return true;
     }
+
+    vec3 Offset(const vec3& p) const {
+        vec3 o = p - pMin;
+        for (int a = 0; a < 3; a++)
+            if (pMax[a] > pMin[a]) o[a] /= pMax[a] - pMin[a];
+        return o;
+    }
+
 };
 
 #ifdef GEOMETRY_IMPLEMENTATION
