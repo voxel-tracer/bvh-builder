@@ -17,7 +17,8 @@ public:
     // BVHAccel Public Methods
     BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, 
              int maxPrimsInNode = 1, 
-             SplitMethod splitMethod = SplitMethod::EqualCounts);
+             SplitMethod splitMethod = SplitMethod::EqualCounts,
+             float internalCost = 0.125f);
     ~BVHAccel();
 
     // BVHAccel Public Data
@@ -36,4 +37,5 @@ private:
     // BVHAccel Private Data
     const int maxPrimsInNode;
     const SplitMethod splitMethod;
+    const float internalCost;
 };
