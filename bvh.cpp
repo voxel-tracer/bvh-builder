@@ -185,7 +185,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                             b1 = Union(b1, buckets[j].bounds);
                             count1 += buckets[j].count;
                         }
-                        cost[i] = internalCost * (count0 * b0.SurfaceArea() + count1 * b1.SurfaceArea()) / bounds.SurfaceArea();
+                        cost[i] = internalCost + (count0 * b0.SurfaceArea() + count1 * b1.SurfaceArea()) / bounds.SurfaceArea();
                     }
 
                     // Find bucket to split that minimizes SAH metric
