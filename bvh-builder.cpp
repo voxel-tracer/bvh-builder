@@ -37,15 +37,15 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
     if (!ret)
         return false;
 
-    std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
-    if (!materials.empty())
-        std::cerr << " materials size " << materials.size() << std::endl;
-    if (!attrib.texcoords.empty())
-        std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
-    if (!attrib.colors.empty())
-        std::cerr << " colors size " << attrib.colors.size() << std::endl;
-    if (!attrib.normals.empty())
-        std::cerr << " normals size " << attrib.normals.size() << std::endl;
+    //std::cerr << " num vertices " << attrib.vertices.size() << std::endl;
+    //if (!materials.empty())
+    //    std::cerr << " materials size " << materials.size() << std::endl;
+    //if (!attrib.texcoords.empty())
+    //    std::cerr << " texcoord size " << attrib.texcoords.size() << std::endl;
+    //if (!attrib.colors.empty())
+    //    std::cerr << " colors size " << attrib.colors.size() << std::endl;
+    //if (!attrib.normals.empty())
+    //    std::cerr << " normals size " << attrib.normals.size() << std::endl;
 
     // loop over shapes and copy all triangles to vertices vector
     vec3 verts[3];

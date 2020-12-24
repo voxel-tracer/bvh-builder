@@ -264,26 +264,39 @@ void split(const std::vector<std::shared_ptr<Triangle>>& primitives,
                 std::cerr << "left split invalid" << std::endl;
             if (!right.IsValid())
                 std::cerr << "right split invalid" << std::endl;
-            if (left.Diagonal()[left.MaximumExtent()] < 0.00001f)
-                std::cerr << " left bound empty" << std::endl;
-            if (right.Diagonal()[right.MaximumExtent()] < 0.00001f)
-                std::cerr << " right bound empty" << std::endl;
+            //if (left.Diagonal()[left.MaximumExtent()] < 0.00001f)
+            //    std::cerr << " left bound empty idx= " << i << ", s= " << info.s << std::endl;
+            //if (right.Diagonal()[right.MaximumExtent()] < 0.00001f)
+            //    std::cerr << " right bound empty idx= " << i << ", s= " << info.s << std::endl;
+            if (left.Diagonal()[left.MaximumExtent()] < 0.00001f ||
+                right.Diagonal()[right.MaximumExtent()] < 0.00001f) {
+                // left or right split has empty bounds, 
+                // it means that splitting current tri was a no op and result will just duplicate it
+                // so we should just stop splitting this tri
+                //std::cerr << "no op split for tri " << i << " and s = " << info.s << std::endl;
+                total -= info.s;
 
-            // compute split count for left and right splits
-            int sleft, sright;
-            updateSplitCount(info.s, left, right, sleft, sright);
+                info.s = 0;
+            }
+            else {
+                // compute split count for left and right splits
+                int sleft, sright;
+                updateSplitCount(info.s, left, right, sleft, sright);
 
-            // replace current triangle with left split
-            tri->bounds = left;
-            info.s = sleft;
+                // replace current triangle with left split
+                tri->bounds = left;
+                info.s = sleft;
 
-            // add new split to the end of the array
-            splitPrimitives[nextSplit] = std::make_shared<Triangle>(*tri, right);
-            splitInfos[nextSplit] = { info.priority, info.bestNode, sright };
-            nextSplit++;
+                // add new split to the end of the array
+                splitPrimitives[nextSplit] = std::make_shared<Triangle>(*tri, right);
+                splitInfos[nextSplit] = { info.priority, info.bestNode, sright };
+                nextSplit++;
 
-            //if (--leftToSplit == 0)
-            //    doneSplitting = true;
+                //if (--leftToSplit == 0)
+                //    doneSplitting = true;
+            }
         }
+
+        splitPrimitives.resize(total);
     }
 }
