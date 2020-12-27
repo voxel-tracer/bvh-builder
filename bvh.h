@@ -18,7 +18,7 @@ public:
     BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, 
              int maxPrimsInNode = 1, 
              SplitMethod splitMethod = SplitMethod::EqualCounts,
-             float internalCost = 0.125f);
+             float internalCost = 0.125f, bool reevaluateCost = false);
     ~BVHAccel();
 
     // BVHAccel Public Data
@@ -33,9 +33,13 @@ private:
 
     void flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOffset);
     void computeQuality(const BVHBuildNode* node, float rootSA, float* largestOverlap);
+    float sahCost(const BVHBuildNode* node, float rootSA) const;
 
     // BVHAccel Private Data
     const int maxPrimsInNode;
     const SplitMethod splitMethod;
     const float internalCost;
+    const bool reevaluateCost;
+    int convertedNodes = 0;
+    int trimmedNodes = 0;
 };

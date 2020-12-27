@@ -52,8 +52,8 @@ void BVHAccel::computeQuality(const BVHBuildNode* node, float rootSA, float *lar
     }
 }
 
-BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrimsInNode, SplitMethod splitMethod, float internalCost)
-    : maxPrimsInNode(maxPrimsInNode), splitMethod(splitMethod), primitives(p), internalCost(internalCost) {
+BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrimsInNode, SplitMethod splitMethod, float internalCost, bool reevaluateCost)
+    : maxPrimsInNode(maxPrimsInNode), splitMethod(splitMethod), primitives(p), internalCost(internalCost), reevaluateCost(reevaluateCost) {
     if (primitives.empty()) return;
     // Build BVH from primitives
 
@@ -76,6 +76,8 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrims
     computeQuality(root, root->bounds.SurfaceArea(), &largestOverlap);
     std::cerr << "BVH created with " << totalNodes << " nodes for " << (int)primitives.size() << std::endl;
     std::cerr << "BVH largest overlap is " << largestOverlap << std::endl;
+    std::cerr << convertedNodes << " nodes converted to leaves" << std::endl;
+    std::cerr << trimmedNodes << " nodes trimmed" << std::endl;
 
     // Compute representation of depth-first traversal of BVH tree
     nodes.resize(totalNodes);
@@ -90,12 +92,26 @@ struct BucketInfo {
     Bounds3 bounds;
 };
 
+float BVHAccel::sahCost(const BVHBuildNode* node, float rootSA) const {
+    float nodeSARatio = node->bounds.SurfaceArea() / rootSA;
+    if (node->nPrimitives > 0) {
+        return node->nPrimitives * nodeSARatio;
+    }
+
+    return internalCost * nodeSARatio + 
+        sahCost(node->children[0], rootSA) + 
+        sahCost(node->children[1], rootSA);
+}
+
 BVHBuildNode* BVHAccel::recursiveBuild(
     std::vector<BVHPrimitiveInfo>& primitiveInfo,
     int start, int end, int* totalNodes,
     std::vector<std::shared_ptr<Triangle>>& orderedPrims) {
     BVHBuildNode* node = new BVHBuildNode();
     (*totalNodes)++;
+    // save this value as we may need it later when reevaluating SAH cost
+    int firstPrimOffset = orderedPrims.size();
+    int curTotalNodes = *totalNodes;
     // compute bounds of all primitives in BVH node
     Bounds3 bounds;
     for (int i = start; i < end; i++)
@@ -103,7 +119,6 @@ BVHBuildNode* BVHAccel::recursiveBuild(
     int nPrimitives = end - start;
     if (nPrimitives == 1) {
         // create leaf BVHBuildNode
-        int firstPrimOffset = orderedPrims.size();
         for (int i = start; i < end; i++) {
             int primNum = primitiveInfo[i].primitiveNumber;
             orderedPrims.push_back(primitives[primNum]);
@@ -121,7 +136,6 @@ BVHBuildNode* BVHAccel::recursiveBuild(
         int mid = (start + end) / 2;
         if (centroidBounds.pMax[dim] == centroidBounds.pMin[dim]) {
             // create leaf BVHBuildNode
-            int firstPrimOffset = orderedPrims.size();
             for (int i = start; i < end; i++) {
                 int primNum = primitiveInfo[i].primitiveNumber;
                 orderedPrims.push_back(primitives[primNum]);
@@ -202,7 +216,6 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                         mid = pmid - &primitiveInfo[0];
                     } else {
                         // Create leaf BVHBuildNode
-                        int firstPrimOffset = orderedPrims.size();
                         for (int i = start; i < end; i++) {
                             int primNum = primitiveInfo[i].primitiveNumber;
                             orderedPrims.push_back(primitives[primNum]);
@@ -218,6 +231,20 @@ BVHBuildNode* BVHAccel::recursiveBuild(
             node->InitInterior(dim,
                 recursiveBuild(primitiveInfo, start, mid, totalNodes, orderedPrims),
                 recursiveBuild(primitiveInfo, mid, end, totalNodes, orderedPrims));
+
+            if (reevaluateCost && splitMethod == SplitMethod::SAH) {
+                // reevaluate node splitting cost and create a leaf instead
+                float splitCost = sahCost(node, node->bounds.SurfaceArea());
+                float leafCost = nPrimitives;
+                if (splitCost > leafCost) {
+                    convertedNodes++;
+                    trimmedNodes += (*totalNodes) - curTotalNodes;
+                    // remove all intermediate nodes added so far
+                    (*totalNodes) = curTotalNodes;
+                    // primitives have already been written to primitiveInfo and orderedPrims
+                    node->InitLeaf(firstPrimOffset, nPrimitives, bounds);
+                }
+            }
         }
     }
     return node;

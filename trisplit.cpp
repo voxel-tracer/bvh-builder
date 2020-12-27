@@ -32,7 +32,11 @@ bool findBestSplittingNode(const std::vector<LinearBVHNode>& nodes, int nodeIdx,
         // even though the triangle is completely inside the leaf node, it may not be its parent node
         if (tri.idx >= node->primitivesOffset && tri.idx < (node->primitivesOffset + node->nPrimitives)) {
             // it is this triangle's BVH node
-            found = true;
+            best->nodeIdx = nodeIdx;
+            best->level = nodeLvl;
+            best->dim = node->bounds.MaximumExtent();
+            best->pos = node->bounds.Center()[best->dim];
+            return true;
         } else {
             return false;
         }
