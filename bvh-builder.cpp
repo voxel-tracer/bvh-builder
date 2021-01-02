@@ -80,12 +80,13 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
     return true;
 }
 
-BVHAccel* split(BVHAccel* accel, BVHAccel::SplitMethod splitMethod, float internalCost, float Sexcess, bool reevaluateCost) {
-    std::vector<std::shared_ptr<Triangle>> splitPrimitives;
-    split(accel->primitives, accel->nodes, Sexcess, splitPrimitives);
+BVHAccel *createBVHAccel(std::vector<std::shared_ptr<Triangle>> &tris) {
+    int maxmaxPrimsInNode = 4;
+    BVHAccel::SplitMethod splitMethod = BVHAccel::SplitMethod::SAH;
+    float internalCost = 1.0f;
+    bool reevaluateCost = false;
 
-    delete accel;
-    return new BVHAccel(splitPrimitives, 1, splitMethod, internalCost, reevaluateCost);
+    return new BVHAccel(tris, maxmaxPrimsInNode, splitMethod, internalCost, reevaluateCost);
 }
 
 int main(int argc, char** argv) {
@@ -93,9 +94,6 @@ int main(int argc, char** argv) {
     std::vector<std::shared_ptr<Triangle>> tris;
     bool success = true;
     bool splitTriangles = true;
-    BVHAccel::SplitMethod splitMethod = BVHAccel::SplitMethod::SAH;
-    float internalCost = 1.0f;
-    bool reevaluateCost = true;
 
     int Sexcess = 0;
     if (argc > 1) {
@@ -130,12 +128,16 @@ int main(int argc, char** argv) {
     std::cerr << "read " << tris.size() << " triangles" << std::endl;
 
     time_t start = clock();
-    BVHAccel *accel = new BVHAccel(tris, 1, splitMethod, internalCost, reevaluateCost);
+    BVHAccel* accel = createBVHAccel(tris);
     std::cerr << "BVH build took " << ((float)(clock() - start)) / CLOCKS_PER_SEC << " seconds" << std::endl;
 
     if (splitTriangles && Sexcess > 0) {
         start = clock();
-        accel = split(accel, splitMethod, internalCost, Sexcess / 100.0, reevaluateCost);
+        std::vector<std::shared_ptr<Triangle>> splitPrimitives;
+        split(accel->primitives, accel->nodes, Sexcess / 100.0f, splitPrimitives);
+
+        delete accel;
+        accel = createBVHAccel(splitPrimitives);
         std::cerr << "Splitting and rebuilding the BVH took " << ((float)(clock() - start)) / CLOCKS_PER_SEC << " seconds" << std::endl;
     }
 
