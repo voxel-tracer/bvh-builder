@@ -82,7 +82,7 @@ bool loadFromObj(const std::string& filepath, std::vector<std::shared_ptr<Triang
 
 BVHAccel *createBVHAccel(std::vector<std::shared_ptr<Triangle>> &tris) {
     int maxmaxPrimsInNode = 4;
-    BVHAccel::SplitMethod splitMethod = BVHAccel::SplitMethod::SAH;
+    BVHAccel::SplitMethod splitMethod = BVHAccel::SplitMethod::SBVH;
     float internalCost = 1.0f;
     bool reevaluateCost = false;
 

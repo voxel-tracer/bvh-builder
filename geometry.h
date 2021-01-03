@@ -5,6 +5,8 @@
 //#define __device__
 #include "vec3.h"
 
+float clamp(float v, float vmin, float vmax);
+
 struct Bounds3 {
     vec3 pMin;
     vec3 pMax;
@@ -87,6 +89,9 @@ struct Bounds3 {
 };
 
 #ifdef GEOMETRY_IMPLEMENTATION
+float clamp(float v, float vmin, float vmax) {
+    return fminf(vmax, fmaxf(vmin, v));
+}
 
 Bounds3 Union(const Bounds3& b1, const Bounds3& b2) {
     Bounds3 ret;

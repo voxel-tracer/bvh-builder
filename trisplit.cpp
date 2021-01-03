@@ -173,10 +173,6 @@ Bounds3 findBestNode(Bounds3 node, std::shared_ptr<Triangle> tri) {
     return cur;
 }
 
-float clamp(float v, float vmin, float vmax) {
-    return fminf(vmax, fmaxf(vmin, v));
-}
-
 void split(std::shared_ptr<Triangle> tri, Bounds3 bestNode, Bounds3& left, Bounds3& right) {
     int dim = bestNode.MaximumExtent();
     float pos = bestNode.Center()[dim];

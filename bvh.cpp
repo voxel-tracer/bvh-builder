@@ -7,6 +7,8 @@
 #include <algorithm>
 #include <fstream>
 
+void split(const vec3* triVerts, const Bounds3& triBounds, int planeDim, float planePos, Bounds3& left, Bounds3& right);
+
 // BVHAccel Local Declarations
 struct BVHPrimitiveInfo {
     BVHPrimitiveInfo() : primitiveNumber(0) {}
@@ -64,17 +66,21 @@ BVHAccel::BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, int maxPrims
 
     // Build BVH tree for primitives using PrimitiveInfo
     int totalNodes = 0;
+    int addedSplits = 0;
     std::vector<std::shared_ptr<Triangle>> orderedPrims;
     orderedPrims.reserve(primitives.size());
     BVHBuildNode* root;
     // we only support SplitMethod::EqualCounts
-    root = recursiveBuild(primitiveInfo, 0, primitives.size(), &totalNodes, orderedPrims);
+    root = recursiveBuild(primitiveInfo, 0, primitives.size(), &totalNodes, &addedSplits, orderedPrims);
     primitives.swap(orderedPrims);
     primitiveInfo.resize(0);
     // compute estimated node quality
     float largestOverlap = 0.0f;
     computeQuality(root, root->bounds.SurfaceArea(), &largestOverlap);
     std::cerr << "BVH created with " << totalNodes << " nodes for " << (int)primitives.size() << std::endl;
+    if (addedSplits > 0) {
+        std::cerr << "  Including " << addedSplits << " additional splits" << std::endl;
+    }
     std::cerr << "BVH largest overlap is " << largestOverlap << std::endl;
     std::cerr << convertedNodes << " nodes converted to leaves" << std::endl;
     std::cerr << trimmedNodes << " nodes trimmed" << std::endl;
@@ -105,7 +111,7 @@ float BVHAccel::sahCost(const BVHBuildNode* node, float rootSA) const {
 
 BVHBuildNode* BVHAccel::recursiveBuild(
     std::vector<BVHPrimitiveInfo>& primitiveInfo,
-    int start, int end, int* totalNodes,
+    int start, int end, int* totalNodes, int* addedSplits,
     std::vector<std::shared_ptr<Triangle>>& orderedPrims) {
     BVHBuildNode* node = new BVHBuildNode();
     (*totalNodes)++;
@@ -155,6 +161,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                 break;
             }
             case SplitMethod::SAH: 
+            case SplitMethod::SBVH:
             default: {
                 // Partition primitives using approximate SAH
                 if (nPrimitives <= 2) {
@@ -164,8 +171,7 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                         [dim](const BVHPrimitiveInfo& a, const BVHPrimitiveInfo& b) {
                             return a.centroid[dim] < b.centroid[dim];
                         });
-                }
-                else {
+                } else {
                     // Allocate BucketInfo for SAH partition buckets
                     constexpr int nBuckets = 12;
                     BucketInfo buckets[nBuckets];
@@ -204,17 +210,76 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                         }
                     }
 
+                    // find best spatial split
+                    // TODO only do this if overlap between object splits is big enough
+                    bool useSpatialSplit = false;
+                    if (splitMethod == SplitMethod::SBVH) {
+                        // reset bucket info
+                        for (int i = 0; i < nBuckets; i++) {
+                            buckets[i].bounds = Bounds3();
+                            buckets[i].count = 0;
+                        }
+
+                        // Initialize BucketInfo for partition buckets, split primitives if necessary
+                        for (int i = start; i < end; ++i) {
+                            Bounds3 curBounds = primitiveInfo[i].bounds;
+
+                            // identify all buckets, reference overlaps
+                            int firstBin = nBuckets * bounds.Offset(primitiveInfo[i].bounds.pMin)[dim];
+                            if (firstBin == nBuckets) firstBin = nBuckets - 1;
+                            int lastBin = nBuckets * bounds.Offset(primitiveInfo[i].bounds.pMax)[dim];
+                            if (lastBin == nBuckets) lastBin = nBuckets - 1;
+                            // update buckets using split references
+                            float bucketSize = bounds.Diagonal()[dim] / nBuckets;
+                            for (int b = firstBin; b < lastBin; b++) {
+                                Bounds3 left, right;
+                                split(primitives[primitiveInfo[i].primitiveNumber]->v, curBounds, dim, bounds.pMin[dim] + bucketSize * b, left, right);
+                                // left split will be part of current bin
+                                buckets[b].count++;
+                                buckets[b].bounds = Union(buckets[b].bounds, left);
+                                // update current triangle's bounds
+                                curBounds = right;
+                            }
+                            buckets[lastBin].count++;
+                            buckets[lastBin].bounds = Union(buckets[lastBin].bounds, curBounds);
+                        }
+
+                        // Compute costs for splitting after each bucket
+                        for (int i = 0; i < nBuckets - 1; ++i) {
+                            Bounds3 b0, b1;
+                            int count0 = 0, count1 = 0;
+                            for (int j = 0; j <= i; ++j) {
+                                b0 = Union(b0, buckets[j].bounds);
+                                count0 += buckets[j].count;
+                            }
+                            for (int j = i + 1; j < nBuckets; ++j) {
+                                b1 = Union(b1, buckets[j].bounds);
+                                count1 += buckets[j].count;
+                            }
+                            cost[i] = internalCost + (count0 * b0.SurfaceArea() + count1 * b1.SurfaceArea()) / bounds.SurfaceArea();
+                        }
+
+                        // Find bucket to split that minimizes SAH metric
+                        // minCost already contains the best object split cost
+                        float sbvhMistCost = cost[0];
+                        int sbvhMinCostSplitBucket = 0;
+                        for (int i = 1; i < nBuckets - 1; ++i) {
+                            if (cost[i] < sbvhMistCost) {
+                                sbvhMistCost = cost[i];
+                                sbvhMinCostSplitBucket = i;
+                            }
+                        }
+
+                        if (sbvhMistCost < minCost) {
+                            minCost = sbvhMistCost;
+                            minCostSplitBucket = sbvhMinCostSplitBucket;
+                            useSpatialSplit = true;
+                        }
+                    }
+
                     // Either create leaf or split primitives at selected SAH bucket
                     float leafCost = nPrimitives;
-                    if (nPrimitives > maxPrimsInNode || minCost < leafCost) {
-                        BVHPrimitiveInfo* pmid = std::partition(&primitiveInfo[start], &primitiveInfo[end - 1] + 1,
-                            [=](const BVHPrimitiveInfo& pi) {
-                                int b = nBuckets * centroidBounds.Offset(pi.centroid)[dim];
-                                if (b == nBuckets) b = nBuckets - 1;
-                                return b <= minCostSplitBucket;
-                            });
-                        mid = pmid - &primitiveInfo[0];
-                    } else {
+                    if (nPrimitives <= maxPrimsInNode && leafCost <= minCost) {
                         // Create leaf BVHBuildNode
                         for (int i = start; i < end; i++) {
                             int primNum = primitiveInfo[i].primitiveNumber;
@@ -222,16 +287,77 @@ BVHBuildNode* BVHAccel::recursiveBuild(
                         }
                         node->InitLeaf(firstPrimOffset, nPrimitives, bounds);
                         return node;
+                    } else if (useSpatialSplit) {
+                        // split all triangles that straddle the split plane
+                        // compute split plane
+                        float bucketSize = bounds.Diagonal()[dim] / nBuckets;
+                        float splitPos = bounds.pMin[dim] + (minCostSplitBucket + 1) * bucketSize;
+
+                        int s = start;
+                        int e = end;
+                        int splits = 0;
+                        while (s < e) {
+                            BVHPrimitiveInfo* pInfo = &primitiveInfo[s];
+                            if (pInfo->bounds.pMax[dim] < splitPos) {
+                                // primitive is on the left of the split plane
+                                ++s;
+                            } else if (pInfo->bounds.pMin[dim] > splitPos) {
+                                // primitive is on the right of the split plane
+                                std::swap(primitiveInfo[s], primitiveInfo[--e]);
+                            } else {
+                                // primitive straddles the splitting plane
+                                Bounds3 left, right;
+                                split(primitives[pInfo->primitiveNumber]->v, pInfo->bounds, dim, splitPos, left, right);
+                                // ignore degenerate cases: splits that generate empty bounds
+                                if (left.Diagonal()[left.MaximumExtent()] < 0.00001f) {
+                                    //std::cerr << "empty left split s=" << s << " e = " << e << std::endl;
+                                    // no need to split the triangle, move it to the right instead
+                                    std::swap(primitiveInfo[s], primitiveInfo[--e]);
+                                } else if (right.Diagonal()[right.MaximumExtent()] < 0.00001f) {
+                                    //std::cerr << "empty right split" << std::endl;
+                                    // no need to split the triangle, move it to the left instead
+                                    ++s;
+                                } else {
+                                    //TODO check if we should unsplit the reference instead to improve the SAH cost
+
+                                    // replace primitiveInfo[s] with left split
+                                    pInfo->bounds = left;
+                                    // insert right split at e
+                                    BVHPrimitiveInfo rInfo(pInfo->primitiveNumber, right);
+                                    primitiveInfo.insert(primitiveInfo.begin() + e, rInfo);
+                                    ++s;
+                                    ++splits;
+                                }
+                            }
+                        }
+
+                        // splits contains the number of added splits
+                        *addedSplits += splits;
+                        mid = e;
+                        end += splits;
+                        //std::cerr << " added " << splits << " splits" << ". split bucket = " << minCostSplitBucket << std::endl;
+                    } else {
+                        BVHPrimitiveInfo* pmid = std::partition(&primitiveInfo[start], &primitiveInfo[end - 1] + 1,
+                            [=](const BVHPrimitiveInfo& pi) {
+                                int b = nBuckets * centroidBounds.Offset(pi.centroid)[dim];
+                                if (b == nBuckets) b = nBuckets - 1;
+                                return b <= minCostSplitBucket;
+                            });
+                        mid = pmid - &primitiveInfo[0];
                     }
                 }
                 break;
             }
             }
 
-            node->InitInterior(dim,
-                recursiveBuild(primitiveInfo, start, mid, totalNodes, orderedPrims),
-                recursiveBuild(primitiveInfo, mid, end, totalNodes, orderedPrims));
+            int leftSplits = 0;
+            BVHBuildNode* child0 = recursiveBuild(primitiveInfo, start, mid, totalNodes, &leftSplits, orderedPrims);
+            int rightSplits = 0;
+            BVHBuildNode* child1 = recursiveBuild(primitiveInfo, mid + leftSplits, end + leftSplits, totalNodes, &rightSplits, orderedPrims);
+            node->InitInterior(dim, child0, child1);
+            *addedSplits += leftSplits + rightSplits;
 
+            // TODO update reevaluateCost to allow resetting split primitives
             if (reevaluateCost && splitMethod == SplitMethod::SAH) {
                 // reevaluate node splitting cost and create a leaf instead
                 float splitCost = sahCost(node, node->bounds.SurfaceArea());
@@ -268,4 +394,40 @@ void BVHAccel::flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOff
         flattenBVHTree(node->children[0], linearNode->firstChildOffset, firstChildOffset);
         flattenBVHTree(node->children[1], linearNode->firstChildOffset+1, firstChildOffset);
     }
+}
+
+void split(const vec3 *triVerts, const Bounds3 &triBounds, int planeDim, float planePos, Bounds3& left, Bounds3& right) {
+    int dim = planeDim;
+    float pos = planePos;
+
+    vec3 v1 = triVerts[2];
+    for (int i = 0; i < 3; i++) {
+        vec3 v0 = v1;
+        v1 = triVerts[i];
+        float v1p = v1[dim];
+        float v0p = v0[dim];
+
+        if (v0p <= pos) left = Union(left, v0);
+        if (v0p >= pos) right = Union(right, v0);
+        // check if edge intersects the plane and store it in both sides
+        if ((v0p < pos && v1p > pos) || (v0p > pos && v1p < pos)) {
+            vec3 t = lerp(v0, v1, clamp((pos - v0p) / (v1p - v0p), 0.0f, 1.0f));
+            left = Union(left, t);
+            right = Union(right, t);
+        }
+    }
+    // intersect original bounds in case tri is a split already
+    left.pMax[dim] = pos;
+    right.pMin[dim] = pos;
+    left = Intersect(left, triBounds);
+    right = Intersect(right, triBounds);
+
+    // validate that left and right bounds are inside triangle bounds and their union produces triangle bounds
+    if (!triBounds.Contains(left))
+        std::cerr << "tri.bounds !contains left" << std::endl;
+    if (!triBounds.Contains(right))
+        std::cerr << "tri.bounds !contains right" << std::endl;
+    Bounds3 bounds = Union(left, right);
+    if (triBounds.pMin != bounds.pMin || triBounds.pMax != bounds.pMax)
+        std::cerr << "tri.bounds != union(left, right)" << std::endl;
 }

@@ -12,7 +12,7 @@ struct BVHPrimitiveInfo;
 class BVHAccel {
 public:
     // BVHAccel Public Types
-    enum class SplitMethod { SAH, HLBVH, Middle, EqualCounts }; // start with EqualCounts as it corresponds to our custom builder
+    enum class SplitMethod { SAH, SBVH, EqualCounts };
 
     // BVHAccel Public Methods
     BVHAccel(const std::vector<std::shared_ptr<Triangle>>& p, 
@@ -28,7 +28,7 @@ private:
     // BVHAccel Private Methods
     BVHBuildNode* recursiveBuild(
         std::vector<BVHPrimitiveInfo>& primitiveInfo, 
-        int start, int end, int* totalNodes, 
+        int start, int end, int* totalNodes, int *addedSplits,
         std::vector<std::shared_ptr<Triangle>>& orderedPrims);
 
     void flattenBVHTree(BVHBuildNode* node, int offset, int* firstChildOffset);
